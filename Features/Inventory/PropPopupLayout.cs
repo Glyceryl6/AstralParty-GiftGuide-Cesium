@@ -46,8 +46,8 @@ namespace AstralProbe.Features.Inventory {
         private void Apply(IReadOnlyList<GObject> footer) {
             // Bound both dimensions to the real screen. Widening a list is
             // never allowed to make it wider than the dialog behind it.
-            float newW = Math.Min(_originalW + 150f, Math.Max(_originalW, _pane.width - 36f));
-            float newH = Math.Min(_originalH + 135f, Math.Max(_originalH, _pane.height - 36f));
+            float newW = Math.Min(_originalW + 220f, Math.Max(_originalW, _pane.width - 28f));
+            float newH = Math.Min(_originalH + 200f, Math.Max(_originalH, _pane.height - 28f));
             float dw = Math.Max(0f, newW - _originalW);
             float dh = Math.Max(0f, newH - _originalH);
             float x = Math.Max(8f, Math.Min(_pane.width - newW - 8f, _originalX - dw * .5f));
@@ -76,23 +76,23 @@ namespace AstralProbe.Features.Inventory {
             }
         }
 
-        internal float Left => _background.x + 22f;
-        internal float Right => _background.x + _background.width - 22f;
-        internal float Bottom => _background.y + _background.height - 78f;
+        internal float Left => _background.x + 16f;
+        internal float Right => _background.x + _background.width - 16f;
+        internal float Bottom => _background.y + _background.height - 48f;
 
         internal float FooterTop(float top) {
             float bottom = Bottom;
             foreach (OriginalLocation item in _footers) {
                 GObject obj = item.Object;
                 if (obj.isDisposed || !obj.visible) continue;
-                if (obj.y > top + 50f && obj.y < bottom) bottom = obj.y - 8f;
+                if (obj.y > top + 36f && obj.y < bottom) bottom = obj.y - 6f;
             }
             // Modal action buttons are children of the authored 'bottom'.
             foreach (OriginalLocation item in _children) {
                 GObject obj = item.Object;
                 if (!(obj is GButton) || obj.isDisposed || !obj.visible) continue;
                 float y = _background.y + obj.y;
-                if (y > top + 60f && y < bottom) bottom = y - 8f;
+                if (y > top + 42f && y < bottom) bottom = y - 6f;
             }
             return bottom;
         }

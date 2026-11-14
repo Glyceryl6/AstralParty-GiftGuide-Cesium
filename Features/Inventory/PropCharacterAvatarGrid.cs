@@ -11,15 +11,15 @@ namespace AstralProbe.Features.Inventory {
     /// use the original quality skin and square-cropped head photos.
     /// </summary>
     internal sealed class PropCharacterAvatarGrid : IDisposable {
-        private const int Columns = 5;
-        private const float Padding = 12f;
-        private const float ColumnGap = 4f;
-        private const float RowGap = 5f;
-        private const float CaptionHeight = 24f;
-        private const float SectionGap = 8f;
-        private const float AvatarLimit = 98f;
-        private const float LabelHeight = 19f;
-        private const float StatusHeight = 18f;
+        private const int Columns = 4;
+        private const float Padding = 8f;
+        private const float ColumnGap = 2f;
+        private const float RowGap = 2f;
+        private const float CaptionHeight = 22f;
+        private const float SectionGap = 4f;
+        private const float AvatarLimit = 122f;
+        private const float LabelHeight = 17f;
+        private const float StatusHeight = 16f;
         private UISetting_Comp_Score_Desc? _viewport;
         private GComponent? _pane;
         private PropPopupLayout? _layout;
@@ -27,7 +27,7 @@ namespace AstralProbe.Features.Inventory {
         private DateTime _retry;
         private static bool _typesRegistered;
 
-        internal bool Alive => _viewport is { isDisposed: false, parent: not null };
+        internal bool Alive => _viewport != null && !_viewport.isDisposed && _viewport.parent != null;
         internal bool IsFor(GComponent pane, int item) => ReferenceEquals(_pane, pane) && _item == item && Alive;
 
         internal bool TryShow(GComponent pane, int itemId, GTextField description, GButton preview,
@@ -54,12 +54,12 @@ namespace AstralProbe.Features.Inventory {
                 scroll.bouncebackEffect = false;
                 created.opaque = true;
                 // The scroll bar consumes part of the viewport; do not use
-                // contentPane.width for the five-column calculation.
+                // contentPane.width for the four-column calculation.
                 float available = Math.Min(width, scroll.viewWidth > 0f ? scroll.viewWidth : width);
                 float cellWidth = (available - Padding * 2f - ColumnGap * (Columns - 1)) / Columns;
                 if (cellWidth < 44f) throw new InvalidOperationException("弹窗内角色头像可用宽度不足");
-                float avatarSize = Math.Min(AvatarLimit, cellWidth - 4f);
-                float cardHeight = avatarSize + LabelHeight + StatusHeight + 5f;
+                float avatarSize = Math.Min(AvatarLimit, cellWidth - 2f);
+                float cardHeight = avatarSize + LabelHeight + StatusHeight + 8f;
 
                 var content = new GComponent();
                 float y = 0f;
@@ -99,9 +99,12 @@ namespace AstralProbe.Features.Inventory {
             out float x, out float y, out float width, out float height) {
             x = y = width = height = 0f;
             if (pane.width < 280f || pane.height < 180f) return false;
+            // The native description field is allowed to wrap and can be taller
+            // than textHeight. Start below its full authored bounds so the first
+            // portrait row never covers the item's original text.
+            float descriptionBottom = description.y + description.height;
             float top = Math.Max(preview.y + preview.height,
-                Math.Max(name.y + name.height,
-                    description.y + Math.Min(description.height, Math.Max(12f, description.textHeight + 5f)))) + 10f;
+                Math.Max(name.y + name.height, descriptionBottom)) + 18f;
             float left = Math.Max(8f, layout.Left);
             float right = Math.Min(pane.width - 8f, layout.Right);
             float bottom = Math.Min(pane.height - 8f, layout.FooterTop(top));
@@ -158,11 +161,11 @@ namespace AstralProbe.Features.Inventory {
             square.SetXY(photoX, y);
             square.touchable = false;
             UIHero_Com_HeroItem hero = UIHero_Com_HeroItem.CreateInstance();
-            if (hero?.com_Qulity == null || hero.loader_Character == null ||
+            if (hero == null || hero.com_Qulity == null || hero.loader_Character == null ||
                 hero.width <= 0f || hero.height <= 0f)
                 throw new InvalidOperationException("原版角色头像与品质背景不可用");
             Controller quality = hero.com_Qulity.GetControllerAt(0);
-            if (quality is not { pageCount: > 0 })
+            if (quality == null || quality.pageCount <= 0)
                 throw new InvalidOperationException("原版角色品质控制器不可用");
             quality.selectedIndex = Math.Max(0, Math.Min(quality.pageCount - 1, usage.Quality));
             hero.Ultimate.selectedIndex = usage.Quality == 3 ? 1 : 0;
@@ -186,7 +189,7 @@ namespace AstralProbe.Features.Inventory {
                 badge.Status.selectedIndex = 3;
                 badge.releationPowerUp.selectedIndex = 1;
                 badge.LV_txt.visible = false;
-                if (badge.width > 0f && badge.height > 0f) {
+                if (badge is { width: > 0f, height: > 0f }) {
                     float scale2 = Math.Min(1f, Math.Min(23f / badge.width, 23f / badge.height));
                     badge.SetScale(scale2, scale2);
                     badge.SetXY(photoX + avatarSize - badge.width * scale2, y);
@@ -194,22 +197,24 @@ namespace AstralProbe.Features.Inventory {
                     parent.AddChild(badge);
                 } else badge.Dispose();
             }
-            float textY = y + avatarSize + 2f;
-            AddText(parent, usage.Name, style, 13, x, textY, cellWidth, LabelHeight, true);
+            // Caption width and center now match the actual square avatar, not
+            // the wider grid cell, so the two text lines sit directly beneath it.
+            float textY = y + avatarSize + 3f;
+            AddText(parent, usage.Name, style, 13, photoX, textY, avatarSize, LabelHeight, true);
             string status = group switch {
                 0 => "契约缺少 " + usage.ContractMissing,
                 1 => usage.PotentialAwakened ? "已觉醒" : "潜能缺少 " + usage.PotentialMissing,
                 _ => "偏好礼物"
             };
-            AddText(parent, status, style, 12, x, textY + LabelHeight,
-                cellWidth, StatusHeight, true);
+            AddText(parent, status, style, 12, photoX, textY + LabelHeight + 1f,
+                avatarSize, StatusHeight, true);
         }
 
         private sealed class SquarePortraitClip : GComponent {
             internal SquarePortraitClip() { SetupOverflow(OverflowType.Hidden); }
         }
 
-        private static void AddText(GComponent parent, string value, GTextField? style,
+        private static void AddText(GComponent parent, string value, GTextField style,
             int size, float x, float y, float width, float height, bool center) {
             var label = new GTextField {
                 text = value, autoSize = AutoSizeType.None, singleLine = true,
@@ -220,7 +225,7 @@ namespace AstralProbe.Features.Inventory {
             if (style is { isDisposed: false }) format.CopyFrom(style.textFormat);
             format.size = size;
             label.textFormat = format;
-            if (style is { isDisposed: false }) {
+            if (!style.isDisposed) {
                 label.stroke = style.stroke;
                 label.strokeColor = style.strokeColor;
             }
@@ -230,7 +235,7 @@ namespace AstralProbe.Features.Inventory {
         }
 
         internal void Clear() {
-            if (_viewport != null && !_viewport.isDisposed) {
+            if (_viewport is { isDisposed: false }) {
                 _viewport.RemoveFromParent();
                 _viewport.Dispose();
             }
