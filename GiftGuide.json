@@ -1,7 +1,7 @@
 {
   "id": "GiftGuide",
   "name": "礼物指南",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": "Glyceryl6",
   "description": "物品与购买界面显示契约、潜能、礼物偏好，角色卡片显示偏好标识。",
   "permissions": 1,

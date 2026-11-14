@@ -55,7 +55,12 @@ namespace AstralProbe.Features.Inventory {
                     HeroId = info.Id,
                     SortOrder = info.OrderWeight,
                     Name = LocalName(info.NameID, info.Id),
-                    Portrait = painting?.GetCharacterPhoto() ?? string.Empty,
+                    // ProfilePhoto is the game's square-ish head icon used in
+                    // battle HUD and chat. RolePhoto is a wide standing-art
+                    // capture and must not be used as the default avatar.
+                    Portrait = painting == null ? string.Empty :
+                        (!string.IsNullOrWhiteSpace(painting.ProfilePhoto)
+                            ? painting.ProfilePhoto : painting.GetCharacterPhoto()),
                     Quality = painting == null ? 0 : (int)painting.SkinAppearanceType,
                     Owned = card?.IsHas ?? false
                 };

@@ -15,7 +15,8 @@ namespace AstralProbe.Features.Inventory {
         internal static bool Ready() {
             bool setting = Ensure("Setting");
             bool hero = Ensure("Hero");
-            return setting && hero;
+            bool quality = Ensure("Common_External");
+            return setting && hero && quality;
         }
 
         private static bool Ensure(string package) {
