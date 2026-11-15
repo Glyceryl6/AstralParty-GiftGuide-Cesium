@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>GiftGuide</AssemblyName>
     <RootNamespace>GiftGuide</RootNamespace>
-    <Version>0.2.4</Version>
+    <Version>0.2.5</Version>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="UnityEngine.CoreModule">
@@ -52,5 +52,12 @@
   </ItemGroup>
   <ItemGroup>
     <None Update="GiftGuide.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Remove="$dest\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Remove="$dest\**" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Remove="$dest\**" />
   </ItemGroup>
 </Project>

@@ -2,25 +2,23 @@ using System;
 using System.Collections.Generic;
 using CesiumLoader.SDK.Logging;
 using FairyGUI;
+using Tools;
 using UI;
 using UnityEngine;
 
 namespace AstralProbe.Features.Inventory {
     /// <summary>
-    /// The three material groups share one native scroll pane. A character
-    /// tile follows the store shelf, not the Hero card: store quality artwork
-    /// (two original GImages), a TextureLoader portrait, a goods-name component
-    /// and a rich-text price/status line. No game-owned widget is modified.
+    /// Use the game's COMPLETE store shelf button for each character, including
+    /// its native quality frame, portrait slot, name and price area. All these
+    /// elements share the native card's coordinate space. GList arranges the
+    /// native-sized cards; the Setting scroll pane hosts the three sections.
     /// </summary>
     internal sealed class PropCharacterAvatarGrid : IDisposable {
-        private const float Padding = 12f;
-        private const float ColumnGap = 8f;
-        private const float RowGap = 6f;
-        private const float CaptionHeight = 26f;
-        private const float SectionGap = 8f;
-        private const float AvatarLimit = 84f;
-        private const float CardHeight = 98f;
-        private const float CardPadding = 5f;
+        private const float Padding = 7f;
+        private const float ColumnGap = 4f;
+        private const float RowGap = 4f;
+        private const float CaptionHeight = 33f;
+        private const float SectionGap = 10f;
 
         private UISetting_Comp_Score_Desc? _viewport;
         private GComponent? _pane;
@@ -37,23 +35,38 @@ namespace AstralProbe.Features.Inventory {
             if (usages.Count == 0 || DateTime.UtcNow < _retry || !UiPackageWarmup.Ready()) return false;
             UISetting_Comp_Score_Desc? created = null;
             PropPopupLayout? layout = null;
+            UIButton_GoodsItem_Store? sample = null;
             try {
-                layout = PropPopupLayout.Expand(pane, background, footer);
-                if (layout == null || !TryGetViewport(pane, layout, description, preview, name,
-                        out float left, out float top, out float width, out float height)) return false;
-
-                // These are precisely the classes used by the current game's
-                // Common_External shelf, and do not replace a built-in widget.
                 UIObjectFactory.SetPackageItemExtension(UISetting_Comp_Score_Desc.URL,
                     typeof(UISetting_Comp_Score_Desc));
+                UIObjectFactory.SetPackageItemExtension(UIButton_GoodsItem_Store.URL,
+                    typeof(UIButton_GoodsItem_Store));
                 UIObjectFactory.SetPackageItemExtension(UICom_GoodsQuality_Store.URL,
                     typeof(UICom_GoodsQuality_Store));
                 UIObjectFactory.SetPackageItemExtension(UICom_GoodsItemName.URL,
                     typeof(UICom_GoodsItemName));
+                UIObjectFactory.SetPackageItemExtension(UICom_Price.URL,
+                    typeof(UICom_Price));
+                UIObjectFactory.SetPackageItemExtension(UICom_Label.URL,
+                    typeof(UICom_Label));
+                UIObjectFactory.SetPackageItemExtension(UICom_ItemType.URL,
+                    typeof(UICom_ItemType));
+                sample = UIButton_GoodsItem_Store.CreateInstance();
+                if (sample == null || sample.width <= 0f || sample.height <= 0f ||
+                    sample.com_Quality == null || sample.com_ItemName == null ||
+                    sample.com_Price == null)
+                    throw new InvalidOperationException("原版商店商品卡片未就绪");
+                float nativeWidth = sample.width;
+                float nativeHeight = sample.height;
+                sample.Dispose();
+                sample = null;
+
+                layout = PropPopupLayout.Expand(pane, background, footer);
+                if (layout == null || !TryGetViewport(pane, layout, description, preview, name,
+                    nativeWidth, out float left, out float top, out float width, out float height))
+                    return false;
                 created = UISetting_Comp_Score_Desc.CreateInstance();
                 if (created == null) return false;
-                // Only remove the example text. The ScrollPane itself belongs
-                // to the component and is kept, including its native scrollbar.
                 created.RemoveChildren(0, -1, true);
                 created.SetSize(width, height);
                 created.SetXY(left, top);
@@ -63,27 +76,29 @@ namespace AstralProbe.Features.Inventory {
                 scroll.touchEffect = true;
                 scroll.bouncebackEffect = false;
                 created.opaque = true;
-                float available = Math.Min(width, scroll.viewWidth > 0f ? scroll.viewWidth : width);
-                // Use compact store-style horizontal rows. Never expand to
-                // four tiny columns: that left the text outside its own tile.
-                int columns = available >= 760f ? 3 : available >= 420f ? 2 : 1;
-                float cellWidth = (available - Padding * 2f - ColumnGap * (columns - 1)) / columns;
-                if (cellWidth < 165f) throw new InvalidOperationException("角色列表宽度不足");
-                float avatarSize = Math.Min(AvatarLimit, CardHeight - CardPadding * 2f);
-
-                var content = new GComponent { name = "GiftGuide.CharacterSections", touchable = false };
-                float y = 8f;
-                y = AddSection(content, usages, 0, "契约材料", description, name,
-                    available, columns, cellWidth, avatarSize, CardHeight, y);
-                y = AddSection(content, usages, 1, "潜能材料", description, name,
-                    available, columns, cellWidth, avatarSize, CardHeight, y);
-                y = AddSection(content, usages, 2, "偏好礼物", description, name,
-                    available, columns, cellWidth, avatarSize, CardHeight, y);
-                if (y <= 8f) { content.Dispose(); return false; }
-                content.SetSize(available, y + 12f);
+                float available = Math.Min(width,
+                    scroll.viewWidth > 0f ? scroll.viewWidth : width);
+                float tileWidth = Math.Min(nativeWidth, Math.Max(90f, available - Padding * 2f));
+                float scale = Math.Min(1f, tileWidth / nativeWidth);
+                float tileHeight = nativeHeight * scale;
+                int columns = Math.Max(1, (int)Math.Floor((available - Padding * 2f + ColumnGap) /
+                    (tileWidth + ColumnGap)));
+                var content = new GComponent {
+                    name = "GiftGuide.CharacterSections", touchable = false
+                };
+                float y = 7f;
+                y = AddSection(content, usages, 0, "契约材料", name,
+                    available, columns, nativeWidth, nativeHeight, scale, tileWidth, tileHeight, y);
+                y = AddSection(content, usages, 1, "潜能材料", name,
+                    available, columns, nativeWidth, nativeHeight, scale, tileWidth, tileHeight, y);
+                y = AddSection(content, usages, 2, "偏好礼物", name,
+                    available, columns, nativeWidth, nativeHeight, scale, tileWidth, tileHeight, y);
+                if (y <= 7f) { content.Dispose(); return false; }
+                content.SetSize(available, y + 10f);
                 created.AddChild(content);
                 pane.AddChild(created);
                 created.EnsureBoundsCorrect();
+                ActivateNameScroll(content);
                 _viewport = created;
                 _pane = pane;
                 _item = itemId;
@@ -93,9 +108,10 @@ namespace AstralProbe.Features.Inventory {
                 return true;
             } catch (Exception e) {
                 _retry = DateTime.UtcNow.AddSeconds(5);
-                SdkLog.Warn("GiftGuide", "角色材料滚动区域暂不可用：" + e.Message);
+                SdkLog.Warn("GiftGuide", "角色材料商店列表暂不可用：" + e.Message);
                 return false;
             } finally {
+                if (sample != null && !sample.isDisposed) sample.Dispose();
                 if (created != null && !created.isDisposed) {
                     created.RemoveFromParent();
                     created.Dispose();
@@ -105,35 +121,44 @@ namespace AstralProbe.Features.Inventory {
         }
 
         private static bool TryGetViewport(GComponent pane, PropPopupLayout layout,
-            GTextField description, GButton preview, GTextField name,
+            GTextField description, GButton preview, GTextField name, float nativeWidth,
             out float x, out float y, out float width, out float height) {
             x = y = width = height = 0f;
             if (pane.width < 300f || pane.height < 200f) return false;
-            // The native description field may be an oversized empty box. The
-            // rendered glyph height (with a safety margin) determines where
-            // the list can start without covering the description's text.
+            // Prefer the NEW right-hand strip. The original description,
+            // icon/loader, nested contentPane and purchase buttons never move
+            // and can never overlap a list in this separate horizontal area.
+            float rightSpace = layout.Right - layout.RightRailLeft;
+            float leftSpace = layout.LeftRailRight - layout.Left;
+            float required = Math.Max(150f, nativeWidth * .78f);
+            if (rightSpace >= required || leftSpace >= required) {
+                bool onRight = rightSpace >= required && rightSpace >= leftSpace - 12f;
+                x = onRight ? layout.RightRailLeft : layout.Left;
+                width = onRight ? rightSpace : leftSpace;
+                y = layout.Top;
+                height = Math.Min(layout.Bottom - y, pane.height - y - 8f);
+                if (height >= 100f) return true;
+            }
+            // Reduced-width screens: use only the spare space BETWEEN the
+            // native description and footer row (never cover purchase controls).
             float rendered = description.textHeight;
-            float usedHeight = rendered > 0f
-                ? Math.Max(24f, Math.Min(description.height, rendered + 14f))
+            float descHeight = rendered > 0f
+                ? Math.Max(24f, Math.Min(description.height, rendered + 12f))
                 : description.height;
-            float descriptionBottom = description.y + usedHeight;
-            float top = Math.Max(preview.y + preview.height,
-                Math.Max(name.y + name.height, descriptionBottom)) + 17f;
-            float left = Math.Max(8f, layout.Left);
-            float right = Math.Min(pane.width - 8f, layout.Right);
-            float bottom = Math.Min(pane.height - 8f, layout.FooterTop(top));
-            x = left;
-            y = top;
-            width = right - left;
-            height = bottom - top - 6f;
-            return width >= 310f && height >= 135f && x >= 0f && y >= 0f &&
+            float textBottom = description.y + descHeight;
+            y = Math.Max(preview.y + preview.height,
+                Math.Max(name.y + name.height, textBottom)) + 9f;
+            x = layout.Left;
+            width = layout.Right - layout.Left;
+            height = layout.FooterTop(y) - y - 8f;
+            return width >= 180f && height >= 66f && x >= 0f && y >= 0f &&
                 x + width <= pane.width && y + height <= pane.height;
         }
 
         private static float AddSection(GComponent content, IReadOnlyList<CharacterMaterialUsage> all,
-            int group, string heading, GTextField style, GTextField nameStyle,
-            float available, int columns, float cellWidth, float avatarSize,
-            float cardHeight, float y) {
+            int group, string heading, GTextField nameStyle, float available,
+            int columns, float nativeWidth, float nativeHeight, float scale,
+            float tileWidth, float tileHeight, float y) {
             var members = new List<CharacterMaterialUsage>();
             foreach (CharacterMaterialUsage item in all) {
                 if (group == 0 && item.ContractMaterial ||
@@ -141,89 +166,91 @@ namespace AstralProbe.Features.Inventory {
                     group == 2 && item.GiftPreferred) members.Add(item);
             }
             if (members.Count == 0) return y;
-            if (y > 8f) y += SectionGap;
-            AddText(content, heading + " · " + members.Count + " 位角色", nameStyle,
-                19, Padding, y, available - Padding * 2f, CaptionHeight, false);
+            if (y > 7f) y += SectionGap;
+            AddHeading(content, heading + " · " + members.Count + " 位角色",
+                nameStyle, Padding, y, available - Padding * 2f);
             y += CaptionHeight + 3f;
-            for (int i = 0; i < members.Count; i++) {
-                float x = Padding + (i % columns) * (cellWidth + ColumnGap);
-                float cy = y + i / columns * (cardHeight + RowGap);
-                AddCharacter(content, members[i], group, style,
-                    x, cy, cellWidth, avatarSize);
-            }
+            var list = new GList {
+                name = "GiftGuide.StoreList." + group, touchable = false,
+                layout = ListLayoutType.FlowHorizontal,
+                columnGap = (int)ColumnGap,
+                lineGap = (int)RowGap,
+                columnCount = columns,
+                autoResizeItem = false
+            };
             int rows = (members.Count + columns - 1) / columns;
-            return y + rows * cardHeight + Math.Max(0, rows - 1) * RowGap;
+            float listHeight = rows * tileHeight + Math.Max(0, rows - 1) * RowGap;
+            list.SetSize(available - Padding * 2f, listHeight);
+            list.SetXY(Padding, y);
+            content.AddChild(list);
+            foreach (CharacterMaterialUsage usage in members) {
+                // GList places wrappers by their declared DISPLAY size; the
+                // complete native store card is uniformly scaled INSIDE its
+                // wrapper only when a narrow screen forces that compromise.
+                var wrapper = new GComponent { name = "GiftGuide.Item." + usage.HeroId,
+                    touchable = false };
+                wrapper.SetSize(tileWidth, tileHeight);
+                UIButton_GoodsItem_Store item = BuildStoreCard(usage, group);
+                item.SetXY(0f, 0f);
+                item.SetScale(scale, scale);
+                wrapper.AddChild(item);
+                list.AddChild(wrapper);
+            }
+            list.EnsureBoundsCorrect();
+            return y + listHeight;
         }
 
-        private static void AddCharacter(GComponent parent, CharacterMaterialUsage usage,
-            int group, GTextField style, float x, float y, float cellWidth, float avatarSize) {
-            // Each native shop widget lives in its OWN card coordinates. Mixing
-            // pane-level positions with nested component positions previously
-            // placed names and material counts outside their visible tiles.
-            var card = new GComponent {
-                name = "GiftGuide.Character." + usage.HeroId + "." + group,
-                touchable = false
-            };
-            card.SetSize(cellWidth, CardHeight);
-            card.SetXY(x, y);
-            parent.AddChild(card);
+        private static UIButton_GoodsItem_Store BuildStoreCard(CharacterMaterialUsage usage, int group) {
+            UIButton_GoodsItem_Store item = UIButton_GoodsItem_Store.CreateInstance();
+            if (item == null || item.com_Quality == null || item.com_ItemName?.txt_Name == null ||
+                item.com_Price?.txt_SalePrice == null || item.loader_Goods == null)
+                throw new InvalidOperationException("商店角色卡片字段缺失");
+            item.name = "GiftGuide.Character." + usage.HeroId + "." + group;
+            item.touchable = false;
+            item.grayed = false;
+            item.isEmpty.selectedIndex = 0;
+            item.sellOut.selectedIndex = 0;
+            item.owned.selectedIndex = 0;
+            item.isrecharge.selectedIndex = 0;
+            item.isRecharge.selectedIndex = 0;
+            item.isVideo.selectedIndex = 0;
+            item.com_Quality.quality.selectedIndex = usage.ContractSigned
+                ? (int)QualityType.Orange : (int)QualityType.Purple;
+            if (item.com_Quality.isEmpty != null)
+                item.com_Quality.isEmpty.selectedIndex = 0;
 
-            float pictureX = CardPadding;
-            float pictureY = (CardHeight - avatarSize) * .5f;
-            var portrait = new SquarePortraitClip {
-                name = "GiftGuide.Portrait." + usage.HeroId, touchable = false
-            };
-            portrait.SetSize(avatarSize, avatarSize);
-            portrait.SetXY(pictureX, pictureY);
-            card.AddChild(portrait);
-
-            // Draw portrait first, and the store quality artwork LAST so its
-            // border remains visible above the picture (not covered by it).
-            var photo = new TextureLoader {
+            // Preserve the exact original goods-loader rectangle and child
+            // order while substituting the external-texture-aware loader.
+            GLoader previous = item.loader_Goods;
+            int order = item.GetChildIndex(previous);
+            var portrait = new TextureLoader {
                 name = "GiftGuide.CharacterTexture", touchable = false,
                 autoSize = false, fill = FillType.ScaleNoBorder
             };
-            float inset = Math.Max(5f, avatarSize * .07f);
-            photo.SetXY(inset, inset);
-            photo.SetSize(avatarSize - inset * 2f, avatarSize - inset * 2f);
-            photo.url = usage.Portrait;
-            portrait.AddChild(photo);
+            portrait.SetSize(previous.width, previous.height);
+            portrait.SetXY(previous.x, previous.y);
+            item.RemoveChild(previous, true);
+            item.AddChildAt(portrait, order);
+            item.loader_Goods = portrait;
+            portrait.url = usage.Portrait;
 
-            UICom_GoodsQuality_Store frame = UICom_GoodsQuality_Store.CreateInstance();
-            if (frame == null || frame.width <= 0f || frame.height <= 0f || frame.quality == null ||
-                frame.quality.pageCount <= (int)QualityType.Orange)
-                throw new InvalidOperationException("商店品质外框未就绪");
-            frame.quality.selectedIndex = usage.ContractSigned
-                ? (int)QualityType.Orange : (int)QualityType.Purple;
-            if (frame.isEmpty != null) frame.isEmpty.selectedIndex = 0;
-            float frameScale = Math.Min(avatarSize / frame.width, avatarSize / frame.height);
-            frame.SetScale(frameScale, frameScale);
-            frame.SetXY((avatarSize - frame.width * frameScale) * .5f,
-                (avatarSize - frame.height * frameScale) * .5f);
-            frame.touchable = false;
-            portrait.AddChild(frame);
+            item.txt_Remaining.visible = false;
+            item.txt_soldout.visible = false;
+            item.txt_timeTip.visible = false;
+            item.txt_FirstRecharge.visible = false;
+            item.txt_FirstRechargeNum.visible = false;
+            item.txt_ItemNum.visible = false;
+            item.com_Label.visible = false;
+            item.com_ItemType.visible = false;
+            item.com_Price.isDiscount.selectedIndex = 0;
+            item.com_Price.txt_OriginalPrice.visible = false;
+            item.com_Price.txt_DiscountPercent.visible = false;
 
-            float textX = pictureX + avatarSize + 7f;
-            float textWidth = Math.Max(50f, cellWidth - textX - CardPadding);
-            UICom_GoodsItemName name = UICom_GoodsItemName.CreateInstance();
-            if (name == null || name.txt_Name == null)
-                throw new InvalidOperationException("商店商品名称组件未就绪");
-            name.touchable = false;
-            name.SetSize(textWidth, 57f);
-            name.SetXY(textX, 7f);
-            string title = string.IsNullOrWhiteSpace(usage.Title) || usage.Title == usage.Name
-                ? usage.Name : usage.Title + "\n" + usage.Name;
-            name.txt_Name.text = title;
-            name.txt_Name.autoSize = AutoSizeType.None;
-            name.txt_Name.singleLine = false;
-            name.txt_Name.SetXY(0f, 0f);
-            name.txt_Name.SetSize(textWidth, 57f);
-            name.txt_Name.align = AlignType.Center;
-            name.txt_Name.verticalAlign = VertAlignType.Middle;
-            TextFormat format = name.txt_Name.textFormat;
-            format.size = 17;
-            name.txt_Name.textFormat = format;
-            card.AddChild(name);
+            string displayName = string.IsNullOrWhiteSpace(usage.Title) || usage.Title == usage.Name
+                ? usage.Name : usage.Title + " · " + usage.Name;
+            GTextField name = item.com_ItemName.txt_Name;
+            name.autoSize = AutoSizeType.None;
+            name.text = displayName;
 
             string status = group == 0
                 ? (usage.ContractSigned ? "已缔结契约" : usage.ContractMissing > 0
@@ -232,44 +259,43 @@ namespace AstralProbe.Features.Inventory {
                     ? (usage.PotentialAwakened ? "已激发潜能" : usage.PotentialMissing > 0
                         ? "缺少 " + usage.PotentialMissing : "材料已齐")
                     : "偏好礼物";
-            var price = new GRichTextField {
-                name = "GiftGuide.MaterialCount", text = status,
-                touchable = false, autoSize = AutoSizeType.None,
-                singleLine = true, color = new Color(1f, .89f, .61f, 1f),
-                align = AlignType.Center, verticalAlign = VertAlignType.Middle
-            };
-            TextFormat priceFormat = price.textFormat;
-            priceFormat.size = 16;
-            priceFormat.bold = true;
-            price.textFormat = priceFormat;
-            price.SetSize(textWidth, 25f);
-            price.SetXY(textX, 66f);
-            card.AddChild(price);
+            item.com_Price.txt_SalePrice.text = status;
+            return item;
         }
 
-        private sealed class SquarePortraitClip : GComponent {
-            internal SquarePortraitClip() { SetupOverflow(OverflowType.Hidden); }
+        private static void ActivateNameScroll(GComponent content) {
+            // In the native shop TryScrollTextField runs AFTER the card is on
+            // stage. Running it while constructing an offstage card prevents
+            // the game from starting its marquee for longer character titles.
+            for (int i = 0; i < content.numChildren; i++) {
+                if (!(content.GetChildAt(i) is GList list)) continue;
+                for (int j = 0; j < list.numChildren; j++) {
+                    if (!(list.GetChildAt(j) is GComponent wrapper) ||
+                        wrapper.numChildren == 0 ||
+                        !(wrapper.GetChildAt(0) is UIButton_GoodsItem_Store item)) continue;
+                    GTextField name = item.com_ItemName.txt_Name;
+                    AutoSizeType original = name.autoSize;
+                    name.autoSize = AutoSizeType.Both;
+                    name.TryScrollTextField(name.text);
+                    name.autoSize = original;
+                }
+            }
         }
 
-        private static GTextField AddText(GComponent parent, string text, GTextField style,
-            int size, float x, float y, float width, float height, bool center) {
+        private static void AddHeading(GComponent parent, string caption, GTextField style,
+            float x, float y, float width) {
             var label = new GTextField {
-                text = text, autoSize = AutoSizeType.None, singleLine = true,
-                align = center ? AlignType.Center : AlignType.Left,
+                text = caption, autoSize = AutoSizeType.None, singleLine = true,
                 verticalAlign = VertAlignType.Middle, touchable = false
             };
             TextFormat format = label.textFormat;
             if (style != null && !style.isDisposed) format.CopyFrom(style.textFormat);
-            format.size = size;
+            format.size = 20;
+            format.bold = true;
             label.textFormat = format;
-            if (style != null && !style.isDisposed) {
-                label.stroke = style.stroke;
-                label.strokeColor = style.strokeColor;
-            }
-            label.SetSize(width, height);
+            label.SetSize(width, CaptionHeight);
             label.SetXY(x, y);
             parent.AddChild(label);
-            return label;
         }
 
         internal void Clear() {
