@@ -45,10 +45,11 @@ namespace AstralProbe.Features.Inventory {
             // implement System.Collections.Generic.IEnumerable<T>. Use indexed
             // access for both native proxies and genuine HybridCLR collections.
             var infos = characters.Infos;
+            if (infos == null) return false;
             int count = Math.Min(infos.Count, 512);
             for (int i = 0; i < count; i++) {
-                CharacterInfoConfigure info = infos[i];
-                if (info.HeroType != CharacterType.Hero || info.Id <= 0) continue;
+                CharacterInfoConfigure? info = infos[i];
+                if (info == null || info.HeroType != CharacterType.Hero || info.Id <= 0) continue;
 
                 HeroCardData? card = heroCards.GetCardData(info.Id);
                 SkinStandingPaintingConfigureItem? painting = card?.standingPainting;
@@ -69,29 +70,39 @@ namespace AstralProbe.Features.Inventory {
                     Owned = card?.IsHas ?? false
                 };
 
-                if (characters.HeroFavorGiftDict.TryGetValue(info.HeroFavorGift, out CharacterHeroFavorGiftConfigure giftConfig)) {
+                var giftDict = characters.HeroFavorGiftDict;
+                if (giftDict != null && giftDict.TryGetValue(info.HeroFavorGift,
+                    out CharacterHeroFavorGiftConfigure giftConfig) && giftConfig != null) {
                     var gifts = giftConfig.CharacterHeroFavorGiftConfigureItems;
-                    for (int j = 0; j < gifts.Count; j++) {
-                        if (gifts[j].ItemID == itemId) {
-                            usage.GiftPreferred = true;
-                            break;
+                    if (gifts != null) {
+                        for (int j = 0; j < gifts.Count; j++) {
+                            if (gifts[j] != null && gifts[j].ItemID == itemId) {
+                                usage.GiftPreferred = true;
+                                break;
+                            }
                         }
                     }
                 }
 
-                if (favors.BreakthroughDict.TryGetValue(info.FavorBreakthroughReward, out FavorBreakthroughConfigure contract)) {
+                var breakthroughDict = favors.BreakthroughDict;
+                if (breakthroughDict != null && breakthroughDict.TryGetValue(
+                    info.FavorBreakthroughReward, out FavorBreakthroughConfigure contract) && contract != null) {
                     int need = Need(contract.NeedMaterials, itemId);
                     usage.ContractMaterial = need > 0;
                     usage.ContractMissing = usage.ContractSigned ? 0 : Math.Max(0, need - inBag);
                 }
 
                 var breaks = info.PveBreak;
-                for (int j = 0; j < breaks.Count; j++) {
-                    if (!potentials.BreakDict.TryGetValue(breaks[j], out PVENurturanceBreakConfigure talent)) continue;
-                    int need = Need(talent.NeedMaterials, itemId);
-                    if (need <= 0) continue;
-                    usage.PotentialMaterial = true;
-                    if (card?.PveData?.IsTalentUnlock(talent.Id) != true) usage.PotentialMissing += need;
+                var breakDict = potentials.BreakDict;
+                if (breaks != null && breakDict != null) {
+                    for (int j = 0; j < breaks.Count; j++) {
+                        if (!breakDict.TryGetValue(breaks[j], out PVENurturanceBreakConfigure talent) || talent == null)
+                            continue;
+                        int need = Need(talent.NeedMaterials, itemId);
+                        if (need <= 0) continue;
+                        usage.PotentialMaterial = true;
+                        if (card?.PveData?.IsTalentUnlock(talent.Id) != true) usage.PotentialMissing += need;
+                    }
                 }
                 PVENurturanceBreakConfigure? current = card?.PveData?.GetCurrentTalentConfigure();
                 usage.PotentialAwakened = current != null && card?.PveData?.IsTalentUnlock(current.Id) == true;
