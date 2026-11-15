@@ -1,23 +1,28 @@
 using System;
 using System.Collections.Generic;
 using FairyGUI;
+using UnityEngine;
 
 namespace AstralProbe.Features.Inventory {
     /// <summary>
-    /// A width-only extension. The original popup title, loader, buttons and
-    /// all native pane children retain their authored coordinates and sizes.
-    /// The added side rails belong to the background, not the native controls.
+    /// Width-only, reversible popup extension. Do not resize its native GLabel
+    /// (bottom): its internal loader_icon and _contentPane have FairyGUI size
+    /// relations and would be translated by SetSize, even if other popup
+    /// children stay at their original positions.
     /// </summary>
     internal sealed class PropPopupLayout : IDisposable {
         private readonly GComponent _pane;
-        private readonly GLabel _background;
+        private readonly GLabel _nativeBackground;
         private readonly float _originalX, _originalY, _originalW, _originalH;
         private readonly List<GObject> _footers = new List<GObject>();
+        private GGraph? _extension;
+        private float _left;
+        private float _right;
         private bool _disposed;
 
         private PropPopupLayout(GComponent pane, GLabel background) {
             _pane = pane;
-            _background = background;
+            _nativeBackground = background;
             _originalX = background.x;
             _originalY = background.y;
             _originalW = background.width;
@@ -36,21 +41,31 @@ namespace AstralProbe.Features.Inventory {
         private void Apply(IReadOnlyList<GObject> footer) {
             for (int i = 0; i < footer.Count; i++)
                 if (footer[i] != null) _footers.Add(footer[i]);
-
-            // Increase ONLY width, symmetrically around the native frame.
-            // Center the enlarged frame inside its parent if needed, without
-            // translating the game's icon loaders, labels or footer buttons.
-            float newW = Math.Min(_originalW + 660f,
+            float newWidth = Math.Min(_originalW + 1080f,
                 Math.Max(_originalW, _pane.width - 24f));
-            float x = newW <= _originalW + 1f ? _originalX :
-                Math.Max(8f, Math.Min(_pane.width - newW - 8f,
-                    _originalX - (newW - _originalW) * .5f));
-            _background.SetSize(newW, _originalH, true);
-            _background.SetXY(x, _originalY);
+            if (newWidth <= _originalW + 16f)
+                throw new InvalidOperationException("屏幕宽度不足以展开角色指南");
+            _left = Math.Max(8f, Math.Min(_pane.width - newWidth - 8f,
+                _originalX - (newWidth - _originalW) * .5f));
+            _right = _left + newWidth;
+
+            // A separate background lies behind the native window artwork.
+            // This never triggers internal relations of bottom's icon, graph,
+            // title or any purchase controls, and is fully removed on close.
+            _extension = new GGraph {
+                name = "GiftGuide.SideExtension", touchable = false
+            };
+            _extension.SetSize(newWidth, _originalH);
+            _extension.DrawRect(newWidth, _originalH, 2,
+                new Color(.52f, .62f, .75f, .95f),
+                new Color(.075f, .10f, .15f, .92f));
+            _extension.SetXY(_left, _originalY);
+            int index = _pane.GetChildIndex(_nativeBackground);
+            _pane.AddChildAt(_extension, Math.Max(0, index));
         }
 
-        internal float Left => _background.x + 12f;
-        internal float Right => _background.x + _background.width - 12f;
+        internal float Left => _left + 12f;
+        internal float Right => _right - 12f;
         internal float Top => _originalY + 26f;
         internal float Bottom => _originalY + _originalH - 16f;
         internal float RightRailLeft => _originalX + _originalW + 10f;
@@ -70,12 +85,11 @@ namespace AstralProbe.Features.Inventory {
         public void Dispose() {
             if (_disposed) return;
             _disposed = true;
-            try {
-                if (!_background.isDisposed && !_pane.isDisposed) {
-                    _background.SetSize(_originalW, _originalH, true);
-                    _background.SetXY(_originalX, _originalY);
-                }
-            } catch { /* A scene may already have disposed the native dialog. */ }
+            if (_extension != null && !_extension.isDisposed) {
+                _extension.RemoveFromParent();
+                _extension.Dispose();
+            }
+            _extension = null;
         }
     }
 }
