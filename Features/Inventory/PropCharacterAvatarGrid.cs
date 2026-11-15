@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using CesiumLoader.SDK.Logging;
 using FairyGUI;
+using FairyGUI.Utils;
 using Tools;
 using UI;
 using UnityEngine;
@@ -30,10 +31,18 @@ namespace AstralProbe.Features.Inventory {
 
         private sealed class GuideViewport : GComponent {
             internal GuideViewport() {
-                // UISetting_Comp_Score_Desc is a plain component in some game
-                // builds. Create the ScrollPane explicitly instead of assuming
-                // that an unrelated settings component owns one.
-                SetupOverflow(OverflowType.Scroll);
+                // SetupOverflow(Scroll) does NOT create a ScrollPane in the
+                // game's FairyGUI implementation. Only SetupScroll does.
+                // Pass a minimal native scroll config: vertical + auto bar,
+                // no margins, no extra header/footer and four null URLs.
+                // ReadS encodes null as 0xFFFE (big-endian UInt16).
+                SetupScroll(new ByteBuffer(new byte[] {
+                    1, 2, // ScrollType.Vertical, ScrollBarDisplayType.Auto
+                    0, 0, 0, 0, // flags
+                    0, // no scrollbar margins
+                    0xff, 0xfe, 0xff, 0xfe,
+                    0xff, 0xfe, 0xff, 0xfe
+                }));
             }
         }
 

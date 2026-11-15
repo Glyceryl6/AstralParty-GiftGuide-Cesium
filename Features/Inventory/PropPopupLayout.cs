@@ -2,33 +2,28 @@ using System;
 using System.Collections.Generic;
 using CesiumLoader.SDK.Logging;
 using FairyGUI;
-using UnityEngine;
 
 namespace AstralProbe.Features.Inventory {
     /// <summary>
-    /// Extend the original item window horizontally and downwards. Preserve
-    /// authored title, close, image and purchase-control positions while the
-    /// new scroll area occupies only the lower extension.
+    /// Expands the native item window in its own parent coordinate system.
+    /// Do not use LocalToGlobal here: some template children are not attached
+    /// to a FairyGUI DisplayObject until after the window's first layout pass.
     /// </summary>
     internal sealed class PropPopupLayout : IDisposable {
         private readonly GComponent _pane;
         private readonly GLabel _background;
         private readonly Window? _window;
-        private readonly float _originalPaneX, _originalPaneY;
-        private readonly float _originalPaneWidth, _originalPaneHeight;
-        private readonly float _originalWindowX, _originalWindowY;
-        private readonly float _originalWindowWidth, _originalWindowHeight;
-        private readonly float _originalX, _originalY, _originalWidth, _originalHeight;
-        private readonly Vector2 _backgroundGlobal;
+        private readonly float _paneX, _paneY, _paneWidth, _paneHeight;
+        private readonly float _windowX, _windowY, _windowWidth, _windowHeight;
+        private readonly float _backgroundX, _backgroundY, _backgroundWidth, _backgroundHeight;
         private readonly List<Snapshot> _paneChildren = new List<Snapshot>();
         private readonly List<Snapshot> _backgroundChildren = new List<Snapshot>();
-        private bool _disposed;
         private float _guideLeft, _guideTop, _guideWidth, _guideHeight;
+        private bool _disposed;
 
         private sealed class Snapshot {
             internal readonly GObject Object;
             internal readonly float X, Y, Width, Height;
-            internal readonly Vector2 Global;
 
             internal Snapshot(GObject obj) {
                 Object = obj;
@@ -36,7 +31,6 @@ namespace AstralProbe.Features.Inventory {
                 Y = obj.y;
                 Width = obj.width;
                 Height = obj.height;
-                Global = obj.LocalToGlobal(Vector2.zero);
             }
 
             internal void Restore() {
@@ -45,10 +39,11 @@ namespace AstralProbe.Features.Inventory {
                 Object.SetXY(X, Y);
             }
 
-            internal void KeepScreenPosition(float dy, float dx = 0f) {
-                if (Object == null || Object.isDisposed || Object.parent == null) return;
-                Vector2 local = Object.parent.GlobalToLocal(Global + new Vector2(dx, dy));
-                Object.SetXY(local.x, local.y);
+            internal void Shift(float dx, float dy = 0f) {
+                if (Object == null || Object.isDisposed) return;
+                // x/y are local to the *same* parent before and after resize.
+                // This remains safe even when the child has no displayObject.
+                Object.SetXY(X + dx, Y + dy);
             }
         }
 
@@ -56,33 +51,35 @@ namespace AstralProbe.Features.Inventory {
             _pane = pane;
             _background = background;
             _window = pane.parent as Window;
-            _originalPaneX = pane.x;
-            _originalPaneY = pane.y;
-            _originalPaneWidth = pane.width;
-            _originalPaneHeight = pane.height;
-            _originalWindowX = _window?.x ?? 0f;
-            _originalWindowY = _window?.y ?? 0f;
-            _originalWindowWidth = _window?.width ?? 0f;
-            _originalWindowHeight = _window?.height ?? 0f;
-            _originalX = background.x;
-            _originalY = background.y;
-            _originalWidth = background.width;
-            _originalHeight = background.height;
-            _backgroundGlobal = background.LocalToGlobal(Vector2.zero);
+            _paneX = pane.x;
+            _paneY = pane.y;
+            _paneWidth = pane.width;
+            _paneHeight = pane.height;
+            _windowX = _window?.x ?? 0f;
+            _windowY = _window?.y ?? 0f;
+            _windowWidth = _window?.width ?? 0f;
+            _windowHeight = _window?.height ?? 0f;
+            _backgroundX = background.x;
+            _backgroundY = background.y;
+            _backgroundWidth = background.width;
+            _backgroundHeight = background.height;
             foreach (GObject child in pane.GetChildren())
-                _paneChildren.Add(new Snapshot(child));
+                if (child != null && !child.isDisposed) _paneChildren.Add(new Snapshot(child));
             foreach (GObject child in background.GetChildren())
-                _backgroundChildren.Add(new Snapshot(child));
+                if (child != null && !child.isDisposed) _backgroundChildren.Add(new Snapshot(child));
         }
 
         internal static PropPopupLayout? Expand(GComponent pane, GLabel background,
             IReadOnlyList<GObject> footer) {
             if (pane == null || pane.isDisposed || background == null ||
-                background.isDisposed || background.width < 250f || background.height < 200f)
-                return null;
+                background.isDisposed || background.parent != pane ||
+                background.width < 250f || background.height < 200f) return null;
             var layout = new PropPopupLayout(pane, background);
             try {
-                layout.Apply();
+                if (!layout.Apply()) {
+                    layout.Dispose();
+                    return null;
+                }
                 return layout;
             } catch (Exception ex) {
                 layout.Dispose();
@@ -91,72 +88,70 @@ namespace AstralProbe.Features.Inventory {
             }
         }
 
-        private void Apply() {
+        private bool Apply() {
             GRoot root = GRoot.inst;
-            if (root == null || root.width < 650f || root.height < 420f)
-                throw new InvalidOperationException("当前屏幕尺寸不足以扩展物品窗口");
+            if (root == null || root.width < 650f || root.height < 420f) return false;
 
-            float extraWidth = (float)Math.Floor(Math.Min(820f,
-                Math.Max(0f, root.width - _originalPaneWidth - 38f)) / 2f) * 2f;
-            float desiredHeight = Math.Min(310f, root.height * .34f);
-            float availableBelow = root.height - (_backgroundGlobal.y + _originalHeight) - 12f;
-            float moveUp = Math.Min(Math.Max(0f, desiredHeight - availableBelow),
-                Math.Max(0f, _backgroundGlobal.y - 12f));
-            float extraHeight = Math.Min(desiredHeight, Math.Max(0f, availableBelow + moveUp));
-            if (extraHeight < 135f || _originalWidth + extraWidth < 440f)
-                throw new InvalidOperationException("物品窗口下方或两侧没有足够扩展空间");
+            // These game windows often have a full-screen Window/contentPane
+            // with a smaller centered GLabel named bottom. Resizing the entire
+            // screen-sized Window produces no usable space and moves controls.
+            bool fullScreenFrame = _paneWidth >= root.width * .85f ||
+                (_window != null && _windowWidth >= root.width * .85f);
+            float extraWidth = (float)Math.Floor(Math.Min(740f,
+                Math.Max(0f, root.width - _backgroundWidth - 32f)) * .5f) * 2f;
+            // Only add height below the original content. The original title,
+            // icon and purchase controls stay in the original vertical band.
+            float top = (_window != null ? _windowY + _paneY : _paneY) + _backgroundY;
+            float wanted = Math.Min(335f, root.height * .36f);
+            float roomBelow = Math.Max(0f, root.height - top - _backgroundHeight - 12f);
+            float moveUp = Math.Min(Math.Max(0f, wanted - roomBelow), Math.Max(0f, top - 12f));
+            float extraHeight = Math.Min(wanted, roomBelow + moveUp);
+            if (extraHeight < 115f || _backgroundWidth + extraWidth < 440f) return false;
 
             float half = extraWidth * .5f;
-            // Resize the actual Window and its content pane. The previous code
-            // skipped this when the pane was nearly full-screen and only grew
-            // the decorative GLabel, leaving the game window at native size.
-            if (_window != null && !_window.isDisposed) {
-                _window.SetSize(_originalWindowWidth + extraWidth,
-                    _originalWindowHeight + extraHeight);
-                _window.SetXY(_originalWindowX - half, _originalWindowY - moveUp);
-                _pane.SetSize(_originalPaneWidth + extraWidth,
-                    _originalPaneHeight + extraHeight);
-            } else {
-                _pane.SetSize(_originalPaneWidth + extraWidth,
-                    _originalPaneHeight + extraHeight);
-                _pane.SetXY(_originalPaneX - half, _originalPaneY - moveUp);
-            }
-
-            _background.SetSize(_originalWidth + extraWidth, _originalHeight + extraHeight);
-            foreach (Snapshot snapshot in _paneChildren) {
-                if (ReferenceEquals(snapshot.Object, _background) ||
-                    snapshot.Object.isDisposed || snapshot.Object.name == "mohu") continue;
-                if (snapshot.Width > _originalPaneWidth * .9f &&
-                    snapshot.Height > _originalPaneHeight * .85f) continue;
-                snapshot.KeepScreenPosition(-moveUp);
-            }
-
-            Vector2 origin = _pane.GlobalToLocal(_backgroundGlobal +
-                new Vector2(-half, -moveUp));
-            _background.SetXY(origin.x, origin.y);
-            foreach (Snapshot snapshot in _backgroundChildren) {
-                if (snapshot.Object.isDisposed) continue;
-                bool surface = snapshot.Width >= _originalWidth * .80f &&
-                    snapshot.Height >= _originalHeight * .64f &&
-                    (snapshot.Object is GGraph || snapshot.Object is GImage);
-                if (surface) {
-                    snapshot.Object.SetSize(snapshot.Width + extraWidth,
-                        snapshot.Height + extraHeight);
-                    snapshot.KeepScreenPosition(-moveUp, -half);
+            if (!fullScreenFrame) {
+                if (_window != null && !_window.isDisposed) {
+                    _window.SetSize(_windowWidth + extraWidth, _windowHeight + extraHeight);
+                    _window.SetXY(_windowX - half, _windowY - moveUp);
+                    _pane.SetSize(_paneWidth + extraWidth, _paneHeight + extraHeight);
+                    _pane.SetXY(_paneX, _paneY);
                 } else {
-                    string name = snapshot.Object.name ?? string.Empty;
-                    float closeOffset = name.IndexOf("close", StringComparison.OrdinalIgnoreCase) >= 0
-                        ? half : 0f;
-                    snapshot.KeepScreenPosition(-moveUp, closeOffset);
+                    _pane.SetSize(_paneWidth + extraWidth, _paneHeight + extraHeight);
+                    _pane.SetXY(_paneX - half, _paneY - moveUp);
                 }
             }
 
-            Vector2 guide = _pane.GlobalToLocal(_backgroundGlobal +
-                new Vector2(-half + 16f, _originalHeight + 8f - moveUp));
-            _guideLeft = guide.x;
-            _guideTop = guide.y;
-            _guideWidth = _originalWidth + extraWidth - 32f;
-            _guideHeight = extraHeight - 22f;
+            foreach (Snapshot child in _paneChildren) {
+                if (ReferenceEquals(child.Object, _background)) continue;
+                if (child.Width > _paneWidth * .9f && child.Height > _paneHeight * .85f) continue;
+                // A full-screen contentPane must stay unchanged. In that case
+                // only move its authored content upwards to make lower room.
+                child.Shift(fullScreenFrame ? 0f : half,
+                    fullScreenFrame ? -moveUp : 0f);
+            }
+            float newBackgroundX = fullScreenFrame ? _backgroundX - half : _backgroundX;
+            float newBackgroundY = fullScreenFrame ? _backgroundY - moveUp : _backgroundY;
+            _background.SetXY(newBackgroundX, newBackgroundY);
+            _background.SetSize(_backgroundWidth + extraWidth, _backgroundHeight + extraHeight);
+            foreach (Snapshot child in _backgroundChildren) {
+                bool backdrop = child.Width >= _backgroundWidth * .8f &&
+                    child.Height >= _backgroundHeight * .64f &&
+                    (child.Object is GGraph || child.Object is GImage);
+                if (backdrop) {
+                    child.Object.SetSize(child.Width + extraWidth, child.Height + extraHeight);
+                    child.Object.SetXY(child.X, child.Y);
+                } else {
+                    child.Shift(half);
+                }
+            }
+
+            // The scroll area belongs to the actual window, directly beneath
+            // its ORIGINAL height rather than beside it or above the footer.
+            _guideLeft = newBackgroundX + 16f;
+            _guideTop = newBackgroundY + _backgroundHeight + 6f;
+            _guideWidth = _backgroundWidth + extraWidth - 32f;
+            _guideHeight = extraHeight - 18f;
+            return true;
         }
 
         internal float GuideLeft => _guideLeft;
@@ -168,17 +163,17 @@ namespace AstralProbe.Features.Inventory {
             if (_disposed) return;
             _disposed = true;
             if (!_background.isDisposed) {
-                _background.SetSize(_originalWidth, _originalHeight);
-                _background.SetXY(_originalX, _originalY);
+                _background.SetSize(_backgroundWidth, _backgroundHeight);
+                _background.SetXY(_backgroundX, _backgroundY);
                 foreach (Snapshot child in _backgroundChildren) child.Restore();
             }
             if (_window != null && !_window.isDisposed) {
-                _window.SetSize(_originalWindowWidth, _originalWindowHeight);
-                _window.SetXY(_originalWindowX, _originalWindowY);
+                _window.SetSize(_windowWidth, _windowHeight);
+                _window.SetXY(_windowX, _windowY);
             }
             if (!_pane.isDisposed) {
-                _pane.SetSize(_originalPaneWidth, _originalPaneHeight);
-                _pane.SetXY(_originalPaneX, _originalPaneY);
+                _pane.SetSize(_paneWidth, _paneHeight);
+                _pane.SetXY(_paneX, _paneY);
                 foreach (Snapshot child in _paneChildren) child.Restore();
             }
         }
