@@ -8,6 +8,8 @@ namespace AstralProbe.Features.Inventory {
         internal int HeroId;
         internal int SortOrder;
         internal string Name = "";
+        internal string Title = "";
+        internal bool ContractSigned;
         internal string Portrait = "";
         internal int Quality;
         internal bool Owned;
@@ -55,6 +57,8 @@ namespace AstralProbe.Features.Inventory {
                     HeroId = info.Id,
                     SortOrder = info.OrderWeight,
                     Name = LocalName(info.NameID, info.Id),
+                    Title = info.NickID > 0 ? LocalTitle(info.NickID) : string.Empty,
+                    ContractSigned = card?.isBreakThrough == true,
                     // ProfilePhoto is the game's square-ish head icon used in
                     // battle HUD and chat. RolePhoto is a wide standing-art
                     // capture and must not be used as the default avatar.
@@ -78,7 +82,7 @@ namespace AstralProbe.Features.Inventory {
                 if (favors.BreakthroughDict.TryGetValue(info.FavorBreakthroughReward, out FavorBreakthroughConfigure contract)) {
                     int need = Need(contract.NeedMaterials, itemId);
                     usage.ContractMaterial = need > 0;
-                    usage.ContractMissing = card?.isBreakThrough == true ? 0 : Math.Max(0, need - inBag);
+                    usage.ContractMissing = usage.ContractSigned ? 0 : Math.Max(0, need - inBag);
                 }
 
                 var breaks = info.PveBreak;
@@ -102,6 +106,12 @@ namespace AstralProbe.Features.Inventory {
 
         private static int Need(Google.Protobuf.Collections.MapField<int, int> materials, int itemId) {
             return materials != null && materials.TryGetValue(itemId, out int count) ? count : 0;
+        }
+
+        private static string LocalTitle(int textId) {
+            if (textId <= 0 || StaticConfigure.STRCharacter?.LocalDict == null ||
+                !StaticConfigure.STRCharacter.LocalDict.ContainsKey(textId)) return string.Empty;
+            return textId.GetLocal(UIStringType.Character) ?? string.Empty;
         }
 
         private static string LocalName(int textId, int heroId) {

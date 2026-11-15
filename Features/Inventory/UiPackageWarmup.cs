@@ -5,7 +5,7 @@ using FairyGUI;
 
 namespace AstralProbe.Features.Inventory {
     /// <summary>
-    /// The Setting and Hero packages are not necessarily loaded when an item
+    /// The Setting and Common_External packages are not necessarily loaded when an item
     /// details popup first opens. Request them without blocking the game loop.
     /// </summary>
     internal static class UiPackageWarmup {
@@ -14,9 +14,8 @@ namespace AstralProbe.Features.Inventory {
 
         internal static bool Ready() {
             bool setting = Ensure("Setting");
-            bool hero = Ensure("Hero");
             bool quality = Ensure("Common_External");
-            return setting && hero && quality;
+            return setting && quality;
         }
 
         private static bool Ensure(string package) {
