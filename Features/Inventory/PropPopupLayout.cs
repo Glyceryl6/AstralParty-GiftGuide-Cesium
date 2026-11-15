@@ -4,17 +4,15 @@ using FairyGUI;
 
 namespace AstralProbe.Features.Inventory {
     /// <summary>
-    /// The content pane is usually a full-screen hit area; only its 'bottom'
-    /// label is the visible dialog. Widen its left/right edges, grow its bottom
-    /// edge and THEN recenter the finished dialog. Move its content with the
-    /// frame, without ever resizing the screen-sized blur or dimming layer.
-    /// Everything touched here is restored when the item/window changes.
+    /// Keep the native popup's item labels, pictures and counters in their
+    /// authored relative positions. Enlarge the frame sideways and BELOW the
+    /// original content; never scale/re-space individual native components.
+    /// Both the frame and every pane-level change are reversible.
     /// </summary>
     internal sealed class PropPopupLayout : IDisposable {
         private readonly GComponent _pane;
         private readonly GLabel _background;
         private readonly float _originalX, _originalY, _originalW, _originalH;
-        private readonly List<OriginalLocation> _children = new List<OriginalLocation>();
         private readonly List<OriginalLocation> _paneItems = new List<OriginalLocation>();
         private readonly List<GObject> _footers = new List<GObject>();
         private bool _disposed;
@@ -22,9 +20,12 @@ namespace AstralProbe.Features.Inventory {
         private sealed class OriginalLocation {
             internal readonly GObject Object;
             internal readonly float X, Y, Width, Height;
-            internal OriginalLocation(GObject obj) {
-                Object = obj; X = obj.x; Y = obj.y;
+            internal readonly bool IsBottomRow;
+            internal OriginalLocation(GObject obj, bool isBottomRow) {
+                Object = obj;
+                X = obj.x; Y = obj.y;
                 Width = obj.width; Height = obj.height;
+                IsBottomRow = isBottomRow;
             }
             internal void Restore() {
                 if (Object.isDisposed) return;
@@ -38,8 +39,6 @@ namespace AstralProbe.Features.Inventory {
             _background = background;
             _originalX = background.x; _originalY = background.y;
             _originalW = background.width; _originalH = background.height;
-            for (int i = 0; i < background.numChildren; i++)
-                _children.Add(new OriginalLocation(background.GetChildAt(i)));
         }
 
         internal static PropPopupLayout? Expand(GComponent pane, GLabel background,
@@ -59,78 +58,71 @@ namespace AstralProbe.Features.Inventory {
             float newH = Math.Min(_originalH + 240f, Math.Max(_originalH, _pane.height - 36f));
             float dw = Math.Max(0f, newW - _originalW);
             float dh = Math.Max(0f, newH - _originalH);
-
-            // Expand horizontally around the old center; add height below the
-            // old bottom, then recenter the resulting larger frame on screen.
             float x = Clamp((_pane.width - newW) * .5f, 8f, Math.Max(8f, _pane.width - newW - 8f));
             float y = Clamp((_pane.height - newH) * .5f, 8f, Math.Max(8f, _pane.height - newH - 8f));
-            float globalDx = x - _originalX;
-            float globalDy = y - _originalY;
 
-            foreach (GObject item in footer) if (item != null) _footers.Add(item);
-            // Snapshot all native content which intersects the old dialog,
-            // except the full-screen backdrop and the frame itself. Some
-            // buttons are children of the pane rather than of 'bottom'.
+            // When the native frame recenters, all free-standing content moves
+            // together as ONE block. Changing each element by a different ratio
+            // caused labels, icons and their adjacent controls to separate.
+            float moveX = x - _originalX + dw * .5f;
+            float moveY = y - _originalY;
+            for (int i = 0; i < footer.Count; i++) {
+                if (footer[i] != null) _footers.Add(footer[i]);
+            }
+            // The last part of the original dialog is a *row*: move its text,
+            // number labels, currency images and buttons together to the new
+            // bottom, including fields not explicitly listed as footers.
+            float footerBoundary = _originalY + _originalH - 118f;
             for (int i = 0; i < _pane.numChildren; i++) {
                 GObject obj = _pane.GetChildAt(i);
-                if (obj == _background || obj.isDisposed ||
-                    obj.name == "mohu" || IsFullScreenBackdrop(obj)) continue;
+                if (obj == _background || obj.isDisposed || obj.name == "mohu" ||
+                    IsFullScreenBackdrop(obj)) continue;
                 float cx = obj.x + obj.width * .5f;
                 float cy = obj.y + obj.height * .5f;
-                bool belongs = cx >= _originalX - 14f &&
-                    cx <= _originalX + _originalW + 14f &&
-                    cy >= _originalY - 14f && cy <= _originalY + _originalH + 14f;
-                if (!belongs) {
-                    for (int j = 0; j < footer.Count; j++)
-                        if (ReferenceEquals(obj, footer[j])) { belongs = true; break; }
+                bool belongs = cx >= _originalX - 16f && cx <= _originalX + _originalW + 16f &&
+                    cy >= _originalY - 16f && cy <= _originalY + _originalH + 16f;
+                bool explicitFooter = _footers.Contains(obj);
+                if (!belongs && !explicitFooter) continue;
+                bool lower = explicitFooter || cy >= footerBoundary;
+                if (!lower) {
+                    // Text and icon widgets next to a footer button often
+                    // have no explicit reference in the generated window.
+                    // They still belong to the SAME row and must move with it.
+                    foreach (GObject footerItem in _footers) {
+                        if (footerItem == null || footerItem.isDisposed ||
+                            footerItem.parent != _pane) continue;
+                        float fy = footerItem.y + footerItem.height * .5f;
+                        if (Math.Abs(cy - fy) <= 26f) { lower = true; break; }
+                    }
                 }
-                if (belongs) _paneItems.Add(new OriginalLocation(obj));
+                _paneItems.Add(new OriginalLocation(obj, lower));
             }
 
+            // Do not reposition or resize the GLabel's own children. Its skin,
+            // background images and any internal relations must remain native.
             _background.SetSize(newW, newH);
             _background.SetXY(x, y);
-            foreach (OriginalLocation item in _children) {
-                GObject obj = item.Object;
-                if (obj.isDisposed) continue;
-                float relativeX = Clamp((item.X + item.Width * .5f) / _originalW, 0f, 1f);
-                float shiftX = dw * (relativeX - .5f);
-                float shiftY = item.Y > _originalH * .70f ? dh : 0f;
-                obj.SetXY(item.X + shiftX, item.Y + shiftY);
-            }
             foreach (OriginalLocation item in _paneItems) {
-                GObject obj = item.Object;
-                if (obj.isDisposed) continue;
-                float relativeX = Clamp((item.X + item.Width * .5f - _originalX) /
-                    _originalW, 0f, 1f);
-                float shiftX = dw * (relativeX - .5f);
-                float shiftY = item.Y > _originalY + _originalH * .70f ? dh : 0f;
-                obj.SetXY(item.X + globalDx + shiftX, item.Y + globalDy + shiftY);
+                if (item.Object.isDisposed) continue;
+                item.Object.SetXY(item.X + moveX,
+                    item.Y + moveY + (item.IsBottomRow ? dh : 0f));
             }
         }
 
         private bool IsFullScreenBackdrop(GObject obj) =>
             obj.width >= _pane.width * .88f && obj.height >= _pane.height * .88f;
 
-        internal float Left => _background.x + 22f;
-        internal float Right => _background.x + _background.width - 22f;
-        internal float Bottom => _background.y + _background.height - 28f;
+        internal float Left => _background.x + 18f;
+        internal float Right => _background.x + _background.width - 18f;
+        internal float Bottom => _background.y + _background.height - 24f;
 
         internal float FooterTop(float top) {
             float bottom = Bottom;
-            foreach (GObject obj in _footers) {
-                if (obj.isDisposed || !obj.visible || !obj.onStage ||
-                    obj.parent != _pane) continue;
-                if (obj.y > top + 40f && obj.y < bottom)
-                    bottom = Math.Min(bottom, obj.y - 10f);
-            }
-            // Close / action buttons may be children of the frame. Use their
-            // actual pane-space Y, never their frame-local Y.
-            foreach (OriginalLocation item in _children) {
-                GObject obj = item.Object;
-                if (!(obj is GButton) || obj.isDisposed || !obj.visible || !obj.onStage) continue;
-                float y = _background.y + obj.y;
-                if (y > top + 55f && y < bottom &&
-                    item.Y >= _originalH * .58f) bottom = Math.Min(bottom, y - 10f);
+            foreach (OriginalLocation item in _paneItems) {
+                if (!item.IsBottomRow || item.Object.isDisposed ||
+                    !item.Object.visible || !item.Object.onStage) continue;
+                if (item.Object.y > top + 30f && item.Object.y < bottom)
+                    bottom = Math.Min(bottom, item.Object.y - 12f);
             }
             return bottom;
         }
@@ -143,9 +135,8 @@ namespace AstralProbe.Features.Inventory {
                     _background.SetSize(_originalW, _originalH);
                     _background.SetXY(_originalX, _originalY);
                 }
-                foreach (OriginalLocation item in _children) item.Restore();
                 foreach (OriginalLocation item in _paneItems) item.Restore();
-            } catch { /* The scene may already have destroyed the native dialog. */ }
+            } catch { /* A scene may already have disposed the native dialog. */ }
         }
     }
 }

@@ -1,7 +1,7 @@
 {
   "id": "GiftGuide",
   "name": "礼物指南",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "author": "Glyceryl6",
   "description": "物品详情与购买窗口的契约、潜能、偏好礼物角色列表；改进头像、品质和弹窗布局。",
   "permissions": 1,

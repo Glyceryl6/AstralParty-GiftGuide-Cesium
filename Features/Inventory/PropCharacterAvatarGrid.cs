@@ -13,14 +13,13 @@ namespace AstralProbe.Features.Inventory {
     /// and a rich-text price/status line. No game-owned widget is modified.
     /// </summary>
     internal sealed class PropCharacterAvatarGrid : IDisposable {
-        private const float Padding = 16f;
-        private const float ColumnGap = 10f;
-        private const float RowGap = 15f;
-        private const float CaptionHeight = 32f;
-        private const float SectionGap = 13f;
-        private const float AvatarLimit = 148f;
-        private const float NameHeight = 43f;
-        private const float StatusHeight = 28f;
+        private const float Padding = 12f;
+        private const float ColumnGap = 8f;
+        private const float RowGap = 6f;
+        private const float CaptionHeight = 26f;
+        private const float SectionGap = 8f;
+        private const float AvatarLimit = 84f;
+        private const float CardHeight = 98f;
         private const float CardPadding = 5f;
 
         private UISetting_Comp_Score_Desc? _viewport;
@@ -65,20 +64,21 @@ namespace AstralProbe.Features.Inventory {
                 scroll.bouncebackEffect = false;
                 created.opaque = true;
                 float available = Math.Min(width, scroll.viewWidth > 0f ? scroll.viewWidth : width);
-                int columns = available >= 690f ? 4 : available >= 465f ? 3 : 2;
+                // Use compact store-style horizontal rows. Never expand to
+                // four tiny columns: that left the text outside its own tile.
+                int columns = available >= 760f ? 3 : available >= 420f ? 2 : 1;
                 float cellWidth = (available - Padding * 2f - ColumnGap * (columns - 1)) / columns;
-                if (cellWidth < 95f) throw new InvalidOperationException("角色列表宽度不足");
-                float avatarSize = Math.Min(AvatarLimit, cellWidth - CardPadding * 2f);
-                float cardHeight = avatarSize + NameHeight + StatusHeight + 9f;
+                if (cellWidth < 165f) throw new InvalidOperationException("角色列表宽度不足");
+                float avatarSize = Math.Min(AvatarLimit, CardHeight - CardPadding * 2f);
 
                 var content = new GComponent { name = "GiftGuide.CharacterSections", touchable = false };
                 float y = 8f;
                 y = AddSection(content, usages, 0, "契约材料", description, name,
-                    available, columns, cellWidth, avatarSize, cardHeight, y);
+                    available, columns, cellWidth, avatarSize, CardHeight, y);
                 y = AddSection(content, usages, 1, "潜能材料", description, name,
-                    available, columns, cellWidth, avatarSize, cardHeight, y);
+                    available, columns, cellWidth, avatarSize, CardHeight, y);
                 y = AddSection(content, usages, 2, "偏好礼物", description, name,
-                    available, columns, cellWidth, avatarSize, cardHeight, y);
+                    available, columns, cellWidth, avatarSize, CardHeight, y);
                 if (y <= 8f) { content.Dispose(); return false; }
                 content.SetSize(available, y + 12f);
                 created.AddChild(content);
@@ -143,8 +143,8 @@ namespace AstralProbe.Features.Inventory {
             if (members.Count == 0) return y;
             if (y > 8f) y += SectionGap;
             AddText(content, heading + " · " + members.Count + " 位角色", nameStyle,
-                21, Padding, y, available - Padding * 2f, CaptionHeight, false);
-            y += CaptionHeight + 7f;
+                19, Padding, y, available - Padding * 2f, CaptionHeight, false);
+            y += CaptionHeight + 3f;
             for (int i = 0; i < members.Count; i++) {
                 float x = Padding + (i % columns) * (cellWidth + ColumnGap);
                 float cy = y + i / columns * (cardHeight + RowGap);
@@ -157,61 +157,73 @@ namespace AstralProbe.Features.Inventory {
 
         private static void AddCharacter(GComponent parent, CharacterMaterialUsage usage,
             int group, GTextField style, float x, float y, float cellWidth, float avatarSize) {
-            float photoX = x + (cellWidth - avatarSize) * .5f;
+            // Each native shop widget lives in its OWN card coordinates. Mixing
+            // pane-level positions with nested component positions previously
+            // placed names and material counts outside their visible tiles.
+            var card = new GComponent {
+                name = "GiftGuide.Character." + usage.HeroId + "." + group,
+                touchable = false
+            };
+            card.SetSize(cellWidth, CardHeight);
+            card.SetXY(x, y);
+            parent.AddChild(card);
+
+            float pictureX = CardPadding;
+            float pictureY = (CardHeight - avatarSize) * .5f;
             var portrait = new SquarePortraitClip {
                 name = "GiftGuide.Portrait." + usage.HeroId, touchable = false
             };
             portrait.SetSize(avatarSize, avatarSize);
-            portrait.SetXY(photoX, y);
+            portrait.SetXY(pictureX, pictureY);
+            card.AddChild(portrait);
 
-            // The quality controller drives the same two GImages as in a
-            // Button_GoodsItem_Store: orange/gold when contracted, purple else.
-            UICom_GoodsQuality_Store frame = UICom_GoodsQuality_Store.CreateInstance();
-            if (frame == null || frame.width <= 0f || frame.height <= 0f ||
-                frame.quality == null || frame.quality.pageCount <= (int)QualityType.Orange)
-                throw new InvalidOperationException("商店品质外框未就绪");
-            frame.quality.selectedIndex = usage.ContractSigned
-                ? (int)QualityType.Orange : (int)QualityType.Purple;
-            if (frame.isEmpty != null) frame.isEmpty.selectedIndex = 0;
-            float scale = Math.Min(avatarSize / frame.width, avatarSize / frame.height);
-            frame.SetScale(scale, scale);
-            frame.SetXY((avatarSize - frame.width * scale) * .5f,
-                (avatarSize - frame.height * scale) * .5f);
-            frame.touchable = false;
-            portrait.AddChild(frame);
-
-            // TextureLoader is the game's external portrait asset loader; a
-            // plain GLoader can show an empty or fallback picture for this URL.
+            // Draw portrait first, and the store quality artwork LAST so its
+            // border remains visible above the picture (not covered by it).
             var photo = new TextureLoader {
                 name = "GiftGuide.CharacterTexture", touchable = false,
                 autoSize = false, fill = FillType.ScaleNoBorder
             };
-            float inset = Math.Max(6f, avatarSize * .075f);
+            float inset = Math.Max(5f, avatarSize * .07f);
             photo.SetXY(inset, inset);
             photo.SetSize(avatarSize - inset * 2f, avatarSize - inset * 2f);
             photo.url = usage.Portrait;
             portrait.AddChild(photo);
-            parent.AddChild(portrait);
 
+            UICom_GoodsQuality_Store frame = UICom_GoodsQuality_Store.CreateInstance();
+            if (frame == null || frame.width <= 0f || frame.height <= 0f || frame.quality == null ||
+                frame.quality.pageCount <= (int)QualityType.Orange)
+                throw new InvalidOperationException("商店品质外框未就绪");
+            frame.quality.selectedIndex = usage.ContractSigned
+                ? (int)QualityType.Orange : (int)QualityType.Purple;
+            if (frame.isEmpty != null) frame.isEmpty.selectedIndex = 0;
+            float frameScale = Math.Min(avatarSize / frame.width, avatarSize / frame.height);
+            frame.SetScale(frameScale, frameScale);
+            frame.SetXY((avatarSize - frame.width * frameScale) * .5f,
+                (avatarSize - frame.height * frameScale) * .5f);
+            frame.touchable = false;
+            portrait.AddChild(frame);
+
+            float textX = pictureX + avatarSize + 7f;
+            float textWidth = Math.Max(50f, cellWidth - textX - CardPadding);
             UICom_GoodsItemName name = UICom_GoodsItemName.CreateInstance();
             if (name == null || name.txt_Name == null)
                 throw new InvalidOperationException("商店商品名称组件未就绪");
             name.touchable = false;
-            name.SetSize(cellWidth, NameHeight);
-            name.SetXY(x, y + avatarSize + 5f);
+            name.SetSize(textWidth, 57f);
+            name.SetXY(textX, 7f);
             string title = string.IsNullOrWhiteSpace(usage.Title) || usage.Title == usage.Name
                 ? usage.Name : usage.Title + "\n" + usage.Name;
             name.txt_Name.text = title;
-            name.txt_Name.SetXY(0f, 0f);
-            name.txt_Name.SetSize(cellWidth, NameHeight);
             name.txt_Name.autoSize = AutoSizeType.None;
             name.txt_Name.singleLine = false;
+            name.txt_Name.SetXY(0f, 0f);
+            name.txt_Name.SetSize(textWidth, 57f);
             name.txt_Name.align = AlignType.Center;
             name.txt_Name.verticalAlign = VertAlignType.Middle;
             TextFormat format = name.txt_Name.textFormat;
             format.size = 17;
             name.txt_Name.textFormat = format;
-            parent.AddChild(name);
+            card.AddChild(name);
 
             string status = group == 0
                 ? (usage.ContractSigned ? "已缔结契约" : usage.ContractMissing > 0
@@ -227,12 +239,12 @@ namespace AstralProbe.Features.Inventory {
                 align = AlignType.Center, verticalAlign = VertAlignType.Middle
             };
             TextFormat priceFormat = price.textFormat;
-            priceFormat.size = 17;
+            priceFormat.size = 16;
             priceFormat.bold = true;
             price.textFormat = priceFormat;
-            price.SetSize(cellWidth, StatusHeight);
-            price.SetXY(x, y + avatarSize + NameHeight + 6f);
-            parent.AddChild(price);
+            price.SetSize(textWidth, 25f);
+            price.SetXY(textX, 66f);
+            card.AddChild(price);
         }
 
         private sealed class SquarePortraitClip : GComponent {
