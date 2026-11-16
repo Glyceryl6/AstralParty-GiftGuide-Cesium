@@ -123,26 +123,26 @@ namespace AstralProbe.Features.Inventory {
                     (cellWidth + ColumnGap)));
 
                 stage = "生成契约、潜能和偏好礼物分组";
-                var content = new GComponent {
+                var sections = new GComponent {
                     name = "GiftGuide.CharacterSections",
                     touchable = false,
                     opaque = false
                 };
                 var scrollLabels = new List<GTextField>();
                 float y = Padding;
-                y = AddSection(content, usages, 0, "契约", name, description,
+                y = AddSection(sections, usages, 0, "契约", name, description,
                     inner, columns, cellWidth, cellHeight, y, scrollLabels);
-                y = AddSection(content, usages, 1, "潜能", name, description,
+                y = AddSection(sections, usages, 1, "潜能", name, description,
                     inner, columns, cellWidth, cellHeight, y, scrollLabels);
-                y = AddSection(content, usages, 2, "偏好礼物", name, description,
+                y = AddSection(sections, usages, 2, "偏好礼物", name, description,
                     inner, columns, cellWidth, cellHeight, y, scrollLabels);
                 if (y <= Padding) {
-                    content.Dispose();
+                    sections.Dispose();
                     return false;
                 }
 
-                content.SetSize(available, y + Padding);
-                created.AddChild(content);
+                sections.SetSize(available, y + Padding);
+                created.AddChild(sections);
                 created.EnsureBoundsCorrect();
                 stage = "添加角色列表到原版窗口";
                 pane.AddChild(created);
