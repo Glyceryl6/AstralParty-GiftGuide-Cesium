@@ -16,10 +16,10 @@ namespace AstralProbe.Features.Inventory {
     /// </summary>
     internal sealed class PropCharacterAvatarGrid : IDisposable {
         private const float Padding = 9f;
-        private const float CardWidth = 248f;
-        private const float CardHeight = 295f;
-        private const int ColumnGap = 8;
-        private const int RowGap = 8;
+        // Keep authored shop-card size; scaling the button also shrinks the
+        // portrait/name and creates large looking gaps around each cell.
+        private const int ColumnGap = 5;
+        private const int RowGap = 5;
         private const float HeadingHeight = 27f;
         private const float SectionGap = 10f;
 
@@ -74,7 +74,8 @@ namespace AstralProbe.Features.Inventory {
                     typeof(UIButton_GoodsItem_Store));
 
                 stage = "扩展原版弹窗";
-                layout = PropPopupLayout.Expand(pane, background, footer);
+                layout = PropPopupLayout.Expand(pane, background, footer,
+                    description, preview, name);
                 if (layout == null || layout.GuideWidth < 130f || layout.GuideHeight < 95f)
                     return false;
 
@@ -92,13 +93,22 @@ namespace AstralProbe.Features.Inventory {
                 scroll.mouseWheelEnabled = true;
                 scroll.touchEffect = true;
                 scroll.bouncebackEffect = false;
-                scroll.scrollStep = CardHeight + RowGap;
+                // Measure the original store component in the game's UI package.
+                // Never SetScale the authored item: its text and portrait are
+                // already laid out to fit these actual dimensions.
+                UIButton_GoodsItem_Store sample = UIButton_GoodsItem_Store.CreateInstance();
+                if (sample == null || sample.width <= 0f || sample.height <= 0f)
+                    throw new InvalidOperationException("商店角色卡片尚未就绪");
+                float cellWidth = sample.width;
+                float cellHeight = sample.height;
+                sample.Dispose();
+                scroll.scrollStep = cellHeight + RowGap;
 
                 float available = Math.Max(1f, Math.Min(layout.GuideWidth,
                     scroll.viewWidth > 0f ? scroll.viewWidth : layout.GuideWidth));
                 float inner = Math.Max(1f, available - 2f * Padding);
-                float cellWidth = Math.Min(CardWidth, inner);
-                float cellHeight = CardHeight;
+                if (cellWidth > inner)
+                    throw new InvalidOperationException("角色列表宽度不足以容纳原版商店卡片");
                 int columns = Math.Max(1, (int)Math.Floor((inner + ColumnGap) /
                     (cellWidth + ColumnGap)));
 
@@ -198,7 +208,7 @@ namespace AstralProbe.Features.Inventory {
                 columnGap = ColumnGap,
                 lineGap = RowGap,
                 columnCount = columns,
-                align = AlignType.Center,
+                align = AlignType.Left,
                 autoResizeItem = false,
                 touchable = false
             };
@@ -208,15 +218,13 @@ namespace AstralProbe.Features.Inventory {
             list.SetXY(Padding, y);
             content.AddChild(list);
             foreach (CharacterMaterialUsage usage in members)
-                list.AddChild(BuildCharacterCard(usage, group, descriptionStyle, nameStyle,
-                    cellWidth, cellHeight, scrollLabels));
+                list.AddChild(BuildCharacterCard(usage, group, scrollLabels));
             list.EnsureBoundsCorrect();
             return y + listHeight;
         }
 
         private static GComponent BuildCharacterCard(CharacterMaterialUsage usage,
-            int group, GTextField? descriptionStyle, GTextField? nameStyle,
-            float width, float height, List<GTextField> scrollLabels) {
+            int group, List<GTextField> scrollLabels) {
             // Use the complete native store product component. The original
             // hierarchy draws com_Quality and then loader_Goods in the correct
             // order; manually placing a TextureLoader *inside* the quality
@@ -278,23 +286,9 @@ namespace AstralProbe.Features.Inventory {
                 native.com_Price.txt_DiscountPercent.visible = false;
             native.com_Price.txt_SalePrice.text = status;
 
-            // Scale the intact shop card uniformly, including its in-built
-            // text/portrait positions. A fixed-size GList cell holds the
-            // *scaled visual*, preventing the row layout from collapsing.
-            float scale = Math.Min((width - 8f) / native.width,
-                (height - 8f) / native.height);
-            scale = Math.Max(.1f, Math.Min(1.35f, scale));
-            native.SetScale(scale, scale);
-            native.SetXY((width - native.width * scale) * .5f,
-                (height - native.height * scale) * .5f);
-            var cell = new GComponent {
-                name = "GiftGuide.Character." + usage.HeroId + "." + group,
-                touchable = false,
-                opaque = false
-            };
-            cell.SetSize(width, height);
-            cell.AddChild(native);
-            return cell;
+            // GList owns the native component directly. No wrapper, scaling
+            // or re-centering: the same sizing/layout as a real StorePanel row.
+            return native;
         }
 
         private static void CopyStyle(TextFormat target, GTextField? preferred,
