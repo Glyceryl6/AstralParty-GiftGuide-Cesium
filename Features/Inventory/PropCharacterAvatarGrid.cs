@@ -6,7 +6,6 @@ using FairyGUI;
 using FairyGUI.Utils;
 using Tools;
 using UI;
-using UnityEngine;
 
 namespace AstralProbe.Features.Inventory {
     /// <summary>
@@ -24,31 +23,48 @@ namespace AstralProbe.Features.Inventory {
         private const float SectionGap = 10f;
 
         private GuideViewport? _viewport;
-        private GComponent? _scrollBar;
-        private GGraph? _scrollThumb;
-        private ScrollPane? _scrollPane;
-        private float _barLength;
-        private float _thumbLength;
         private GComponent? _pane;
         private PropPopupLayout? _layout;
         private int _item;
         private DateTime _retry;
 
         private sealed class GuideViewport : GComponent {
-            internal GuideViewport() {
-                // SetupOverflow(Scroll) does NOT create a ScrollPane in the
-                // game's FairyGUI implementation. Only SetupScroll does.
-                // Pass a minimal native scroll config: vertical + auto bar,
-                // no margins, no extra header/footer and four null URLs.
-                // ReadS encodes null as 0xFFFE (big-endian UInt16).
-                SetupScroll(new ByteBuffer(new byte[] {
-                    1, 2, // ScrollType.Vertical, ScrollBarDisplayType.Auto
+            internal GuideViewport(string verticalBarUrl) {
+                // The supplied URL points to an existing FairyGUI GScrollBar.
+                // ScrollPane owns it, including thumb dragging and visibility.
+                var scrollOptions = new ByteBuffer(new byte[] {
+                    1, 1, // ScrollType.Vertical, ScrollBarDisplayType.Visible
                     0, 0, 0, 0, // flags
-                    0, // no scrollbar margins
-                    0xff, 0xfe, 0xff, 0xfe,
-                    0xff, 0xfe, 0xff, 0xfe
-                }));
+                    0, // no scroll-bar margins
+                    0, 0, // string-table index 0: native vertical scroll bar
+                    0xff, 0xfe, 0xff, 0xfe, 0xff, 0xfe // no horizontal bar/header/footer
+                }) { stringTable = new[] { verticalBarUrl } };
+                SetupScroll(scrollOptions);
             }
+        }
+
+        private static string? FindVerticalScrollBar() {
+            // Respect the game's configured scrollbar first.
+            string configured = UIConfig.verticalScrollBar;
+            if (!string.IsNullOrWhiteSpace(configured)) {
+                PackageItem? item = UIPackage.GetItemByURL(configured);
+                if (item != null && item.objectType == ObjectType.ScrollBar)
+                    return configured;
+            }
+            // Some game windows leave UIConfig.verticalScrollBar unset.
+            // Search the already-loaded native packages, never draw a fake bar.
+            string? fallback = null;
+            foreach (UIPackage package in UIPackage.GetPackages()) {
+                foreach (PackageItem item in package.GetItems()) {
+                    if (item.objectType != ObjectType.ScrollBar ||
+                        item.width > item.height || item.width <= 0) continue;
+                    string url = "ui://" + package.id + item.id;
+                    if (package.name == "Common_External" || package.name == "Common")
+                        return url;
+                    fallback ??= url;
+                }
+            }
+            return fallback;
         }
 
         internal bool Alive => _viewport != null && !_viewport.isDisposed && _viewport.parent != null;
@@ -88,14 +104,21 @@ namespace AstralProbe.Features.Inventory {
                     return false;
                 }
 
+                stage = "查找原版滚动条";
+                string? verticalBarUrl = FindVerticalScrollBar();
+                if (string.IsNullOrEmpty(verticalBarUrl)) {
+                    _retry = DateTime.UtcNow.AddSeconds(5);
+                    SdkLog.Warn("GiftGuide", "尚未找到原版 GScrollBar，角色列表等待 UI 包就绪");
+                    return false;
+                }
                 stage = "创建角色列表滚动区域";
-                created = new GuideViewport {
+                created = new GuideViewport(verticalBarUrl) {
                     name = "GiftGuide.ScrollViewport",
                     touchable = true,
                     opaque = true // captures wheel and drag even over blank space
                 };
-                // Leave a fixed gutter for a visible, usable scroll bar.
-                created.SetSize(layout.GuideWidth - 19f, layout.GuideHeight);
+                // ScrollPane reserves its own gutter for the native GScrollBar.
+                created.SetSize(layout.GuideWidth, layout.GuideHeight);
                 created.SetXY(layout.GuideLeft, layout.GuideTop);
                 ScrollPane? scroll = created.scrollPane;
                 if (scroll == null)
@@ -112,7 +135,7 @@ namespace AstralProbe.Features.Inventory {
                 float cellWidth = sample.width;
                 float cellHeight = sample.height;
                 sample.Dispose();
-                scroll.scrollStep = cellHeight + RowGap;
+                scroll.scrollStep = Math.Max(28f, cellHeight * .38f);
 
                 float available = Math.Max(1f, Math.Min(created.width,
                     scroll.viewWidth > 0f ? scroll.viewWidth : created.width));
@@ -148,7 +171,6 @@ namespace AstralProbe.Features.Inventory {
                 pane.AddChild(created);
                 created.EnsureBoundsCorrect();
                 scroll.UpdateScrollBarVisible();
-                CreateScrollBar(pane, layout, scroll);
                 foreach (GTextField label in scrollLabels) {
                     if (label == null || label.isDisposed || !label.onStage) continue;
                     AutoSizeType autoSize = label.autoSize;
@@ -169,14 +191,6 @@ namespace AstralProbe.Features.Inventory {
                 layout = null;
                 return true;
             } catch (Exception ex) {
-                if (_scrollPane != null) _scrollPane.onScroll.Remove(UpdateThumb);
-                _scrollPane = null;
-                if (_scrollBar != null && !_scrollBar.isDisposed) {
-                    _scrollBar.RemoveFromParent();
-                    _scrollBar.Dispose();
-                }
-                _scrollBar = null;
-                _scrollThumb = null;
                 _retry = DateTime.UtcNow.AddSeconds(5);
                 // Keep the stack trace and the failed stage. A message-only
                 // warning hid the actual null component in previous builds.
@@ -319,68 +333,7 @@ namespace AstralProbe.Features.Inventory {
             target.size = Math.Max(minSize, Math.Min(maxSize, size));
         }
 
-        // The game's UIConfig.verticalScrollBar is not always populated on
-        // these screens. Draw a small persistent fallback scrollbar instead of
-        // silently leaving a scrollable but unmarked viewport.
-        private void CreateScrollBar(GComponent pane, PropPopupLayout layout, ScrollPane scroll) {
-            _scrollPane = scroll;
-            _barLength = layout.GuideHeight;
-            var bar = new GComponent { name = "GiftGuide.VisibleScrollbar", touchable = true,
-                opaque = true };
-            bar.SetSize(14f, _barLength);
-            bar.SetXY(layout.GuideLeft + layout.GuideWidth - 14f, layout.GuideTop);
-            GGraph track = new GGraph { touchable = false };
-            track.SetSize(14f, _barLength);
-            track.DrawRect(14f, _barLength, 0, Color.clear,
-                new Color(.13f, .13f, .16f, .55f));
-            bar.AddChild(track);
-            GGraph thumb = new GGraph { touchable = false };
-            thumb.SetXY(2f, 0f);
-            bar.AddChild(thumb);
-            _scrollBar = bar;
-            _scrollThumb = thumb;
-            pane.AddChild(bar);
-            bar.onTouchBegin.Add(ScrollBarPointer);
-            bar.onTouchMove.Add(ScrollBarPointer);
-            scroll.onScroll.Add(UpdateThumb);
-            UpdateThumb();
-        }
-
-        private void ScrollBarPointer(EventContext context) {
-            if (_scrollBar == null || _scrollPane == null) return;
-            try {
-                Vector2 local = _scrollBar.GlobalToLocal(Stage.inst.touchPosition);
-                float travel = Math.Max(1f, _barLength - _thumbLength);
-                float value = Mathf.Clamp01((local.y - _thumbLength * .5f) / travel);
-                _scrollPane.SetPercY(value, false);
-                UpdateThumb();
-            } catch (Exception ex) {
-                SdkLog.Warn("GiftGuide", "滚动条操作失败：" + ex.Message);
-            }
-        }
-
-        private void UpdateThumb() {
-            if (_scrollPane == null || _scrollBar == null || _scrollThumb == null ||
-                _scrollThumb.isDisposed) return;
-            float content = Math.Max(_scrollPane.contentHeight, _barLength);
-            _thumbLength = Math.Max(23f, Math.Min(_barLength,
-                _barLength * _scrollPane.viewHeight / Math.Max(1f, content)));
-            float track = Math.Max(0f, _barLength - _thumbLength);
-            _scrollThumb.SetSize(10f, _thumbLength);
-            _scrollThumb.SetXY(2f, track * _scrollPane.percY);
-            _scrollThumb.DrawRect(10f, _thumbLength, 1,
-                new Color(.83f, .83f, .83f, 1f), new Color(.84f, .84f, .84f, .86f));
-        }
-
         internal void Clear() {
-            if (_scrollPane != null) _scrollPane.onScroll.Remove(UpdateThumb);
-            _scrollPane = null;
-            if (_scrollBar != null && !_scrollBar.isDisposed) {
-                _scrollBar.RemoveFromParent();
-                _scrollBar.Dispose();
-            }
-            _scrollBar = null;
-            _scrollThumb = null;
             if (_viewport != null && !_viewport.isDisposed) {
                 _viewport.RemoveFromParent();
                 _viewport.Dispose();

@@ -15,7 +15,7 @@ namespace AstralProbe.Features.Inventory {
     /// </summary>
     internal sealed class PropPopupLayout : IDisposable {
         private const float Edge = 12f;
-        private const float Inner = 16f;
+        private const float Inner = 24f;
         private const float Gap = 5f;
         private const float ExtraHeight = 445f;
         private const float PreferredLift = 76f;
@@ -172,6 +172,9 @@ namespace AstralProbe.Features.Inventory {
             contentBottom = ContentBottom(name, pane, contentBottom, originalBottom);
             if (content != null) foreach (GObject obj in content)
                 contentBottom = ContentBottom(obj, pane, contentBottom, originalBottom);
+            float detailSafeBottom = Math.Max(
+                ContentBottom(description, pane, y + 38f, originalBottom),
+                ContentBottom(preview, pane, y + 38f, originalBottom));
             float nativeBottom = contentBottom;
             if (footer != null) foreach (GObject obj in footer)
                 nativeBottom = ContentBottom(obj, pane, nativeBottom, originalBottom);
@@ -247,6 +250,13 @@ namespace AstralProbe.Features.Inventory {
             // Native item fields moved by -lift too. Use the shifted bottom,
             // otherwise the viewport begins too low and appears very short.
             _top = Math.Max(contentBottom, nativeBottom) - lift + Gap;
+            if (!afterFooter) {
+                // Detail window: use some of the original gap above the button
+                // row instead of leaving a tall unused strip above the guide.
+                // Still stay below the item description and preview image.
+                float safeTop = detailSafeBottom - lift + Gap;
+                _top = Math.Max(safeTop, _top - 64f);
+            }
             float maxBottom = y - lift + h + extraHeight - Inner;
             _height = Math.Max(0f, maxBottom - _top);
             return _width >= 270f && _height >= 105f;
