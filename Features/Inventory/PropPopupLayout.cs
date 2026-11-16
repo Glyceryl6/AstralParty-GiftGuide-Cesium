@@ -8,18 +8,18 @@ using UI;
 
 namespace AstralProbe.Features.Inventory {
     /// <summary>
-    /// Expands the existing native popup without moving its authored item
-    /// artwork/text. The frame's baseline is persistent, while the *current*
-    /// content snapshots are captured per display: unrelated items must never
-    /// be reset to positions from another item or controller state.
+    /// Expands the native frame only to the sides and below its original top.
+    /// The frame and its original contents then move upwards together, so the
+    /// original title, image and description keep their relative layout.
+    /// Snapshots are taken for each display and restored when the guide closes.
     /// </summary>
     internal sealed class PropPopupLayout : IDisposable {
         private const float Edge = 12f;
         private const float Inner = 16f;
         private const float Gap = 5f;
-        private const float ExtraHeight = 390f;
+        private const float ExtraHeight = 445f;
         private const float PreferredLift = 76f;
-        private const float MaxLift = 160f;
+        private const float MaxLift = 260f;
         private static readonly ConditionalWeakTable<GComponent, Baseline> Originals =
             new ConditionalWeakTable<GComponent, Baseline>();
         private readonly Baseline _baseline;
@@ -136,9 +136,9 @@ namespace AstralProbe.Features.Inventory {
             // a low-resolution viewport. Preserve the overflow when choosing
             // the lift, otherwise the enlarged frame can still run offscreen.
             float roomBelow = root.height - Edge - (screenY + h);
-            // Expand upwards as well as downwards, and lift the native frame
-            // so its original artwork is not pressed against the top edge.
-            // The content remains stationary in pane coordinates below.
+            // Grow the frame DOWNWARDS from its original top, then lift the
+            // whole native window. Lifting only the frame used to leave a blank
+            // strip above the title and steal height from the character list.
             float lift = Math.Min(Math.Max(0f, screenY - Edge),
                 Math.Min(MaxLift, Math.Max(PreferredLift,
                     wantedExtraHeight - roomBelow)));
@@ -163,8 +163,8 @@ namespace AstralProbe.Features.Inventory {
                 }
             }
 
-            // Compute the actual bottom of authored content BEFORE changing
-            // coordinates. The purchase list must appear after its buttons.
+            // Measure original content BEFORE moving it. Both windows must
+            // place the character list below their existing action buttons.
             float originalBottom = y + h;
             float contentBottom = y + 38f;
             contentBottom = ContentBottom(description, pane, contentBottom, originalBottom);
@@ -172,69 +172,94 @@ namespace AstralProbe.Features.Inventory {
             contentBottom = ContentBottom(name, pane, contentBottom, originalBottom);
             if (content != null) foreach (GObject obj in content)
                 contentBottom = ContentBottom(obj, pane, contentBottom, originalBottom);
-            float footerBottom = contentBottom;
+            float nativeBottom = contentBottom;
             if (footer != null) foreach (GObject obj in footer)
-                footerBottom = ContentBottom(obj, pane, footerBottom, originalBottom);
-            float buttonReserve = 0f;
-            if (frame is UICom_PopUpWindow_Bottom native) {
-                GButton?[] nativeButtons = { native.btn_Sure, native.btn_Sure_Only, native.btn_Cancel };
-                foreach (GButton? button in nativeButtons) {
-                    if (button == null || button.isDisposed || !button.visible) continue;
-                    if (afterFooter)
-                        footerBottom = Math.Max(footerBottom, y + button.y + button.height);
-                    else
-                        buttonReserve = Math.Max(buttonReserve, h - button.y);
-                }
-            }
+                nativeBottom = ContentBottom(obj, pane, nativeBottom, originalBottom);
+            // The bottom field is declared as GLabel in both native window
+            // classes and is not always upgraded to UICom_PopUpWindow_Bottom.
+            // Measure visible frame buttons without requiring that subclass.
+            foreach (Snapshot snap in _currentDecorations)
+                if (snap.Item is GButton button && !button.isDisposed &&
+                    button.visible && snap.Y >= h * .5f)
+                    nativeBottom = Math.Max(nativeBottom, y + snap.Y + snap.Height);
 
-            // The expanded frame is centered around the *existing content*.
-            // FairyGUI can move siblings through size relations. Immediately
-            // undo that automatic movement; the item's image and text must
-            // remain at their original absolute positions (no +dx/-lift).
+            // Resize the ORIGINAL frame (no top extension), then translate it
+            // and the native content together. Pane children are independent
+            // of the bottom label, so moving only the frame does not move them.
             frame.SetSize(w + extraWidth, h + extraHeight, true);
             frame.SetXY(x + dx, y - lift);
-            foreach (Snapshot snap in _currentSiblings) snap.Restore();
-            // Reapply the extra text height after restoring FairyGUI relation
-            // side effects, or the snapshot will silently undo the expansion.
+
+            // FairyGUI size relations may have moved other pane children.
+            // Restore their original coordinates before applying the SAME
+            // vertical translation as the frame. Do not move the full-screen
+            // shade/mohu: it belongs to the whole pane, not the popup itself.
+            // Restore FairyGUI groups first: moving a GGroup also moves its
+            // members. Set final coordinates only on the actual elements to
+            // avoid applying the translation twice to grouped content.
+            foreach (Snapshot snap in _currentSiblings)
+                if (snap.Item is GGroup) snap.Restore();
+            foreach (Snapshot snap in _currentSiblings)
+                if (!(snap.Item is GGroup)) snap.Restore();
+            foreach (Snapshot snap in _currentSiblings) {
+                if (snap.Item is GGroup || IsFullscreenOverlay(snap, pane)) continue;
+                snap.Item.SetXY(snap.X, snap.Y - lift);
+            }
+            // Description is the only original text field we may grow, and
+            // only inside its original space. Restore height on close.
             if (expandedDescriptionHeight > 0f && description != null &&
                 !description.isDisposed)
                 description.SetSize(description.width, expandedDescriptionHeight, true);
-            foreach (Snapshot snap in _currentSiblings)
-                if (!ReferenceEquals(snap.Item, description)) snap.Restore();
+
+            foreach (Snapshot snap in _currentDecorations)
+                if (snap.Item is GGroup) snap.Restore();
             foreach (Snapshot snap in _currentDecorations) {
+                if (snap.Item is GGroup) continue;
                 GObject obj = snap.Item;
                 if (obj == null || obj.isDisposed) continue;
                 bool backdrop = (obj is GImage || obj is GGraph || obj is GLoader) &&
                     snap.Width >= w * .65f && snap.Height >= h * .55f;
                 if (backdrop) {
-                    obj.SetXY(snap.X, snap.Y);
+                    // The existing texture/graph covers the extra sides and
+                    // bottom. Its top edge stays at the original local Y.
                     obj.SetSize(snap.Width + extraWidth, snap.Height + extraHeight, true);
-                } else if (frame is UICom_PopUpWindow_Bottom bottom &&
-                    ReferenceEquals(obj, bottom.closeButton)) {
+                    obj.SetXY(snap.X, snap.Y);
+                } else if (obj is GButton &&
+                    ((frame is UICom_PopUpWindow_Bottom bottom &&
+                      ReferenceEquals(obj, bottom.closeButton)) ||
+                     (frame.numChildren > 2 &&
+                      ReferenceEquals(obj, frame.GetChildAt(2))))) {
+                    // Prevent frame-size relations from stretching the button.
+                    snap.Restore();
+                    // Close button follows the widened frame's right edge.
                     obj.SetXY(snap.X + extraWidth, snap.Y);
-                } else if (!afterFooter && frame is UICom_PopUpWindow_Bottom actions &&
-                    (ReferenceEquals(obj, actions.btn_Sure) ||
-                     ReferenceEquals(obj, actions.btn_Sure_Only) ||
-                     ReferenceEquals(obj, actions.btn_Cancel))) {
-                    // Detail-window action buttons belong below the guide,
-                    // rather than creating a blank strip above the guide.
-                    obj.SetXY(snap.X - dx, snap.Y + lift + extraHeight);
                 } else {
-                    // Offset the *local* coordinates to cancel out the new
-                    // frame origin. This retains the exact old visual position
-                    // of the title and embedded buttons; only the frame grows.
-                    obj.SetXY(snap.X - dx, snap.Y + lift);
+                    // Prevent size relations from stretching or hiding the
+                    // original title, text and action controls.
+                    snap.Restore();
+                    // Keep their old SCREEN X while widening symmetrically.
+                    // Local Y is unchanged, so they move up with the frame.
+                    obj.SetXY(snap.X - dx, snap.Y);
                 }
             }
 
             _left = x + dx + Inner;
             _width = w + extraWidth - 2f * Inner;
-            // Existing pane children were not lifted: use their REAL bottom.
-            _top = Math.Max(contentBottom, footerBottom) + Gap;
+            // Native item fields moved by -lift too. Use the shifted bottom,
+            // otherwise the viewport begins too low and appears very short.
+            _top = Math.Max(contentBottom, nativeBottom) - lift + Gap;
             float maxBottom = y - lift + h + extraHeight - Inner;
-            _height = Math.Max(0f, maxBottom - _top -
-                (afterFooter ? 0f : buttonReserve));
+            _height = Math.Max(0f, maxBottom - _top);
             return _width >= 270f && _height >= 105f;
+        }
+
+        private static bool IsFullscreenOverlay(Snapshot snap, GComponent pane) {
+            // 'mohu' is the native dimming layer behind the popup. Moving it
+            // shifts the whole modal screen and can disturb later openings.
+            if (string.Equals(snap.Item.name, "mohu", StringComparison.OrdinalIgnoreCase))
+                return true;
+            return Math.Abs(snap.X) <= Edge && Math.Abs(snap.Y) <= Edge &&
+                   snap.Width >= pane.width * .88f &&
+                   snap.Height >= pane.height * .88f;
         }
 
         internal float GuideLeft => _left;
