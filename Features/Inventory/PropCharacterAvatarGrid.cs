@@ -24,6 +24,11 @@ namespace AstralProbe.Features.Inventory {
         private const float SectionGap = 10f;
 
         private GuideViewport? _viewport;
+        private GComponent? _scrollBar;
+        private GGraph? _scrollThumb;
+        private ScrollPane? _scrollPane;
+        private float _barLength;
+        private float _thumbLength;
         private GComponent? _pane;
         private PropPopupLayout? _layout;
         private int _item;
@@ -51,6 +56,7 @@ namespace AstralProbe.Features.Inventory {
 
         internal bool TryShow(GComponent pane, int itemId, GTextField? description, GButton? preview,
             GTextField? name, GLabel background, IReadOnlyList<GObject> footer,
+            IReadOnlyList<GObject> objects, bool afterFooter,
             IReadOnlyList<CharacterMaterialUsage> usages) {
             if (pane == null || pane.isDisposed || background == null || background.isDisposed ||
                 usages == null || usages.Count == 0 || DateTime.UtcNow < _retry ||
@@ -74,18 +80,22 @@ namespace AstralProbe.Features.Inventory {
                     typeof(UIButton_GoodsItem_Store));
 
                 stage = "扩展原版弹窗";
-                layout = PropPopupLayout.Expand(pane, background, footer,
-                    description, preview, name);
-                if (layout == null || layout.GuideWidth < 130f || layout.GuideHeight < 95f)
+                layout = PropPopupLayout.Expand(pane, background, footer, objects,
+                    description, preview, name, afterFooter);
+                if (layout == null || layout.GuideWidth < 270f || layout.GuideHeight < 105f) {
+                    _retry = DateTime.UtcNow.AddSeconds(5);
+                    SdkLog.Warn("GiftGuide", "原版物品弹窗当前可用区域不足，角色列表稍后重试");
                     return false;
+                }
 
                 stage = "创建角色列表滚动区域";
                 created = new GuideViewport {
                     name = "GiftGuide.ScrollViewport",
                     touchable = true,
-                    opaque = false
+                    opaque = true // captures wheel and drag even over blank space
                 };
-                created.SetSize(layout.GuideWidth, layout.GuideHeight);
+                // Leave a fixed gutter for a visible, usable scroll bar.
+                created.SetSize(layout.GuideWidth - 19f, layout.GuideHeight);
                 created.SetXY(layout.GuideLeft, layout.GuideTop);
                 ScrollPane? scroll = created.scrollPane;
                 if (scroll == null)
@@ -104,8 +114,8 @@ namespace AstralProbe.Features.Inventory {
                 sample.Dispose();
                 scroll.scrollStep = cellHeight + RowGap;
 
-                float available = Math.Max(1f, Math.Min(layout.GuideWidth,
-                    scroll.viewWidth > 0f ? scroll.viewWidth : layout.GuideWidth));
+                float available = Math.Max(1f, Math.Min(created.width,
+                    scroll.viewWidth > 0f ? scroll.viewWidth : created.width));
                 float inner = Math.Max(1f, available - 2f * Padding);
                 if (cellWidth > inner)
                     throw new InvalidOperationException("角色列表宽度不足以容纳原版商店卡片");
@@ -134,10 +144,11 @@ namespace AstralProbe.Features.Inventory {
                 content.SetSize(available, y + Padding);
                 created.AddChild(content);
                 created.EnsureBoundsCorrect();
-                scroll.UpdateScrollBarVisible();
-
                 stage = "添加角色列表到原版窗口";
                 pane.AddChild(created);
+                created.EnsureBoundsCorrect();
+                scroll.UpdateScrollBarVisible();
+                CreateScrollBar(pane, layout, scroll);
                 foreach (GTextField label in scrollLabels) {
                     if (label == null || label.isDisposed || !label.onStage) continue;
                     AutoSizeType autoSize = label.autoSize;
@@ -158,6 +169,14 @@ namespace AstralProbe.Features.Inventory {
                 layout = null;
                 return true;
             } catch (Exception ex) {
+                if (_scrollPane != null) _scrollPane.onScroll.Remove(UpdateThumb);
+                _scrollPane = null;
+                if (_scrollBar != null && !_scrollBar.isDisposed) {
+                    _scrollBar.RemoveFromParent();
+                    _scrollBar.Dispose();
+                }
+                _scrollBar = null;
+                _scrollThumb = null;
                 _retry = DateTime.UtcNow.AddSeconds(5);
                 // Keep the stack trace and the failed stage. A message-only
                 // warning hid the actual null component in previous builds.
@@ -300,7 +319,68 @@ namespace AstralProbe.Features.Inventory {
             target.size = Math.Max(minSize, Math.Min(maxSize, size));
         }
 
+        // The game's UIConfig.verticalScrollBar is not always populated on
+        // these screens. Draw a small persistent fallback scrollbar instead of
+        // silently leaving a scrollable but unmarked viewport.
+        private void CreateScrollBar(GComponent pane, PropPopupLayout layout, ScrollPane scroll) {
+            _scrollPane = scroll;
+            _barLength = layout.GuideHeight;
+            var bar = new GComponent { name = "GiftGuide.VisibleScrollbar", touchable = true,
+                opaque = true };
+            bar.SetSize(14f, _barLength);
+            bar.SetXY(layout.GuideLeft + layout.GuideWidth - 14f, layout.GuideTop);
+            GGraph track = new GGraph { touchable = false };
+            track.SetSize(14f, _barLength);
+            track.DrawRect(14f, _barLength, 0, Color.clear,
+                new Color(.13f, .13f, .16f, .55f));
+            bar.AddChild(track);
+            GGraph thumb = new GGraph { touchable = false };
+            thumb.SetXY(2f, 0f);
+            bar.AddChild(thumb);
+            _scrollBar = bar;
+            _scrollThumb = thumb;
+            pane.AddChild(bar);
+            bar.onTouchBegin.Add(ScrollBarPointer);
+            bar.onTouchMove.Add(ScrollBarPointer);
+            scroll.onScroll.Add(UpdateThumb);
+            UpdateThumb();
+        }
+
+        private void ScrollBarPointer(EventContext context) {
+            if (_scrollBar == null || _scrollPane == null) return;
+            try {
+                Vector2 local = _scrollBar.GlobalToLocal(Stage.inst.touchPosition);
+                float travel = Math.Max(1f, _barLength - _thumbLength);
+                float value = Mathf.Clamp01((local.y - _thumbLength * .5f) / travel);
+                _scrollPane.SetPercY(value, false);
+                UpdateThumb();
+            } catch (Exception ex) {
+                SdkLog.Warn("GiftGuide", "滚动条操作失败：" + ex.Message);
+            }
+        }
+
+        private void UpdateThumb() {
+            if (_scrollPane == null || _scrollBar == null || _scrollThumb == null ||
+                _scrollThumb.isDisposed) return;
+            float content = Math.Max(_scrollPane.contentHeight, _barLength);
+            _thumbLength = Math.Max(23f, Math.Min(_barLength,
+                _barLength * _scrollPane.viewHeight / Math.Max(1f, content)));
+            float track = Math.Max(0f, _barLength - _thumbLength);
+            _scrollThumb.SetSize(10f, _thumbLength);
+            _scrollThumb.SetXY(2f, track * _scrollPane.percY);
+            _scrollThumb.DrawRect(10f, _thumbLength, 1,
+                new Color(.83f, .83f, .83f, 1f), new Color(.84f, .84f, .84f, .86f));
+        }
+
         internal void Clear() {
+            if (_scrollPane != null) _scrollPane.onScroll.Remove(UpdateThumb);
+            _scrollPane = null;
+            if (_scrollBar != null && !_scrollBar.isDisposed) {
+                _scrollBar.RemoveFromParent();
+                _scrollBar.Dispose();
+            }
+            _scrollBar = null;
+            _scrollThumb = null;
             if (_viewport != null && !_viewport.isDisposed) {
                 _viewport.RemoveFromParent();
                 _viewport.Dispose();

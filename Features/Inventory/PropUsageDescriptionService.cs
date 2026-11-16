@@ -24,7 +24,9 @@ namespace AstralProbe.Features.Inventory {
                 usages.Count == 0) return;
             _grid.TryShow(pane, itemId, pane.txt_itemDes, pane.btn_item, pane.txt_itemName,
                 pane.bottom, new GObject[] { pane.btn_addNum, pane.btn_delNum, pane.btn_Min,
-                    pane.btn_Max, pane.txt_Recycle }, usages);
+                    pane.btn_Max, pane.txt_Recycle },
+                new GObject[] { pane.com_Explain, pane.list_ChestItems, pane.list_PropWay, pane.list_Way },
+                false, usages);
         }
 
         internal void Shutdown() => _grid.Clear();
