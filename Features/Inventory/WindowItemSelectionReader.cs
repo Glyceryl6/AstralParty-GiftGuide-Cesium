@@ -15,6 +15,7 @@ namespace AstralProbe.Features.Inventory {
     internal static class WindowItemSelectionReader {
         private const BindingFlags AnyInstance = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
         private static readonly FieldInfo? PurchaseGoodsField = typeof(PurchaseWindow).GetField("goodsData", AnyInstance);
+        private static readonly FieldInfo? BoxRewardsField = typeof(UIBoxProp_Com_OpenChest).GetField("ChestItemList", AnyInstance);
         private static readonly FieldInfo? DetailItemIdField = typeof(PropDetailWindow).GetField("itemId", AnyInstance);
         private static readonly Dictionary<string, int> ByVisibleItem = new();
 
@@ -41,6 +42,29 @@ namespace AstralProbe.Features.Inventory {
                 if (Matches(id, name, icon, desc)) return id;
             } catch { }
             return ResolveVisible(name, icon, desc);
+        }
+
+        internal static int FromBoxProp(BoxPropWindow window) {
+            if (!(window.contentPane is UIBoxPropWindow pane) ||
+                pane.type.selectedIndex != 1 || pane.com_Chest?.list_Item == null) return 0;
+            GList list = pane.com_Chest.list_Item;
+            int selected = list.selectedIndex;
+            try {
+                // Use the same reward order as the original chest window.
+                // Never identify the chest itself as the selected material.
+                var rewards = BoxRewardsField?.GetValue(pane.com_Chest)
+                    as List<KeyValuePair<int, int>>;
+                if (rewards == null || selected < 0 || selected >= rewards.Count) return 0;
+                int itemId = rewards[selected].Key;
+                ItemInfoConfigure info = itemId.GetItemInfoConfigure();
+                if (info == null) return 0;
+                // A recycled list item may still display the previous reward.
+                if (selected >= list.numChildren ||
+                    !(list.GetChildAt(selected) is UICom_Item item) ||
+                    !string.Equals(item.loader_Icon?.url, info.ShowIcon,
+                        StringComparison.Ordinal)) return 0;
+                return itemId;
+            } catch { return 0; }
         }
 
         private static string IconUrl(GButton button) {

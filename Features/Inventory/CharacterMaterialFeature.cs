@@ -9,6 +9,7 @@ namespace AstralProbe.Features.Inventory {
     internal sealed class CharacterMaterialFeature : IDisposable {
         private readonly StoreItemUsageService _shop = new StoreItemUsageService();
         private readonly PropUsageDescriptionService _detail = new PropUsageDescriptionService();
+        private readonly BoxPropUsageService _box = new BoxPropUsageService();
         private DateTime _next;
         private DateTime _retry;
         private DateTime _warnAt;
@@ -21,6 +22,7 @@ namespace AstralProbe.Features.Inventory {
                 _enabled = value;
                 _shop.Enabled = value;
                 _detail.Enabled = value;
+                _box.Enabled = value;
                 if (!value) Clear();
             }
         }
@@ -31,6 +33,7 @@ namespace AstralProbe.Features.Inventory {
             try {
                 _shop.Tick();
                 _detail.Tick();
+                _box.Tick();
             } catch (Exception e) {
                 Clear();
                 _retry = DateTime.UtcNow.AddSeconds(10);
@@ -44,11 +47,13 @@ namespace AstralProbe.Features.Inventory {
         internal void Clear() {
             _shop.Shutdown();
             _detail.Shutdown();
+            _box.Shutdown();
         }
 
         public void Dispose() {
             _shop.Dispose();
             _detail.Dispose();
+            _box.Dispose();
         }
     }
 }
