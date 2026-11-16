@@ -1,7 +1,7 @@
 {
   "id": "GiftGuide",
   "name": "礼物指南",
-  "version": "0.2.10",
+  "version": "0.2.11",
   "author": "Glyceryl6",
   "description": "在物品详情和购买窗口中按契约、潜能、偏好礼物分类显示适用角色，查看头像、品质和缺少材料。",
   "permissions": 1,

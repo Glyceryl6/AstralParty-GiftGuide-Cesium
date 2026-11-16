@@ -16,10 +16,10 @@ namespace AstralProbe.Features.Inventory {
     /// </summary>
     internal sealed class PropCharacterAvatarGrid : IDisposable {
         private const float Padding = 9f;
-        private const float CardWidth = 184f;
-        private const float CardHeight = 194f;
-        private const int ColumnGap = 9;
-        private const int RowGap = 9;
+        private const float CardWidth = 248f;
+        private const float CardHeight = 295f;
+        private const int ColumnGap = 8;
+        private const int RowGap = 8;
         private const float HeadingHeight = 27f;
         private const float SectionGap = 10f;
 
@@ -64,6 +64,14 @@ namespace AstralProbe.Features.Inventory {
                     typeof(UICom_GoodsQuality_Store));
                 UIObjectFactory.SetPackageItemExtension(UICom_GoodsItemName.URL,
                     typeof(UICom_GoodsItemName));
+                UIObjectFactory.SetPackageItemExtension(UICom_Label.URL,
+                    typeof(UICom_Label));
+                UIObjectFactory.SetPackageItemExtension(UICom_ItemType.URL,
+                    typeof(UICom_ItemType));
+                UIObjectFactory.SetPackageItemExtension(UICom_Price.URL,
+                    typeof(UICom_Price));
+                UIObjectFactory.SetPackageItemExtension(UIButton_GoodsItem_Store.URL,
+                    typeof(UIButton_GoodsItem_Store));
 
                 stage = "扩展原版弹窗";
                 layout = PropPopupLayout.Expand(pane, background, footer);
@@ -190,6 +198,7 @@ namespace AstralProbe.Features.Inventory {
                 columnGap = ColumnGap,
                 lineGap = RowGap,
                 columnCount = columns,
+                align = AlignType.Center,
                 autoResizeItem = false,
                 touchable = false
             };
@@ -208,60 +217,49 @@ namespace AstralProbe.Features.Inventory {
         private static GComponent BuildCharacterCard(CharacterMaterialUsage usage,
             int group, GTextField? descriptionStyle, GTextField? nameStyle,
             float width, float height, List<GTextField> scrollLabels) {
-            var card = new GComponent {
-                name = "GiftGuide.Character." + usage.HeroId + "." + group,
-                touchable = false,
-                opaque = false
-            };
-            card.SetSize(width, height);
+            // Use the complete native store product component. The original
+            // hierarchy draws com_Quality and then loader_Goods in the correct
+            // order; manually placing a TextureLoader *inside* the quality
+            // frame put portraits behind opaque parts of that frame.
+            UIButton_GoodsItem_Store native = UIButton_GoodsItem_Store.CreateInstance();
+            if (native == null || native.width < 4f || native.height < 4f ||
+                native.com_Quality == null || native.loader_Goods == null ||
+                native.com_ItemName?.txt_Name == null ||
+                native.com_Price?.txt_SalePrice == null)
+                throw new InvalidOperationException("原版商店角色卡片组件尚未准备好");
 
-            UICom_GoodsQuality_Store quality = UICom_GoodsQuality_Store.CreateInstance();
-            if (quality == null || quality.width < 2f || quality.height < 2f)
-                throw new InvalidOperationException("原版商品品质框尚未就绪");
-            if (quality.quality != null)
-                quality.quality.selectedIndex = usage.ContractSigned
+            native.touchable = false;
+            native.opaque = false;
+            native.grayed = false;
+            if (native.sellOut != null) native.sellOut.selectedIndex = 0;
+            if (native.owned != null) native.owned.selectedIndex = 0;
+            if (native.isEmpty != null) native.isEmpty.selectedIndex = 0;
+            if (native.isRecharge != null) native.isRecharge.selectedIndex = 0;
+            if (native.isrecharge != null) native.isrecharge.selectedIndex = 0;
+            if (native.isVideo != null) native.isVideo.selectedIndex = 0;
+            if (native.com_Quality.quality != null)
+                native.com_Quality.quality.selectedIndex = usage.ContractSigned
                     ? (int)QualityType.Orange : (int)QualityType.Purple;
-            if (quality.isEmpty != null) quality.isEmpty.selectedIndex = 0;
+            if (native.com_Quality.isEmpty != null)
+                native.com_Quality.isEmpty.selectedIndex = 0;
+            native.loader_Goods.url = usage.Portrait ?? "";
+            native.loader_Goods.visible = true;
 
-            float frameSize = Math.Min(120f, width - 22f);
-            float frameScale = Math.Min(frameSize / quality.width,
-                frameSize / quality.height);
-            var portrait = new TextureLoader {
-                name = "GiftGuide.ProfilePhoto",
-                touchable = false,
-                fill = FillType.ScaleNoBorder
-            };
-            portrait.SetSize(Math.Max(1f, quality.width - 16f),
-                Math.Max(1f, quality.height - 16f));
-            portrait.SetXY(8f, 8f);
-            quality.AddChildAt(portrait, Math.Min(1, quality.numChildren));
-            if (!string.IsNullOrWhiteSpace(usage.Portrait)) portrait.url = usage.Portrait;
-            quality.SetScale(frameScale, frameScale);
-            quality.SetXY((width - quality.width * frameScale) * .5f, 1f);
-            card.AddChild(quality);
+            if (native.txt_Remaining != null) native.txt_Remaining.visible = false;
+            if (native.txt_ItemNum != null) native.txt_ItemNum.visible = false;
+            if (native.txt_soldout != null) native.txt_soldout.visible = false;
+            if (native.txt_timeTip != null) native.txt_timeTip.visible = false;
+            if (native.txt_FirstRecharge != null) native.txt_FirstRecharge.visible = false;
+            if (native.txt_FirstRechargeNum != null) native.txt_FirstRechargeNum.visible = false;
+            if (native.com_Label != null) native.com_Label.visible = false;
+            if (native.com_ItemType != null) native.com_ItemType.visible = false;
 
-            UICom_GoodsItemName nativeName = UICom_GoodsItemName.CreateInstance();
-            if (nativeName == null || nativeName.txt_Name == null)
-                throw new InvalidOperationException("原版商品名称组件尚未就绪");
-            nativeName.SetXY(4f, 122f);
-            nativeName.SetSize(width - 8f, 47f);
-            GTextField label = nativeName.txt_Name;
-            label.SetXY(0f, 0f);
-            label.SetSize(width - 8f, 47f);
-            label.autoSize = AutoSizeType.None;
-            label.singleLine = true;
-            label.align = AlignType.Center;
-            label.verticalAlign = VertAlignType.Middle;
-            TextFormat nameFormat = label.textFormat;
-            CopyStyle(nameFormat, nameStyle, descriptionStyle, 13, 18);
-            label.textFormat = nameFormat;
+            GTextField label = native.com_ItemName.txt_Name;
             label.text = string.IsNullOrWhiteSpace(usage.Title) || usage.Title == usage.Name
                 ? usage.Name : usage.Title + " / " + usage.Name;
-            // The native marquee requires an attached display object; defer
-            // TryScrollTextField until the viewport has been added to the window.
+            label.visible = true;
+            native.com_ItemName.visible = true;
             scrollLabels.Add(label);
-            nativeName.visible = true;
-            card.AddChild(nativeName);
 
             string status = group == 0
                 ? (usage.ContractSigned ? "" : usage.ContractMissing > 0
@@ -270,24 +268,33 @@ namespace AstralProbe.Features.Inventory {
                     ? (usage.PotentialAwakened ? "" : usage.PotentialMissing > 0
                         ? "缺少 " + usage.PotentialMissing : "材料已齐")
                     : "偏好礼物";
-            if (status.Length > 0) {
-                var countLabel = new GRichTextField {
-                    name = "GiftGuide.MaterialCount",
-                    touchable = false,
-                    autoSize = AutoSizeType.None,
-                    singleLine = true,
-                    align = AlignType.Center,
-                    verticalAlign = VertAlignType.Middle
-                };
-                TextFormat countFormat = countLabel.textFormat;
-                CopyStyle(countFormat, descriptionStyle, nameStyle, 13, 16);
-                countLabel.textFormat = countFormat;
-                countLabel.SetXY(3f, 171f);
-                countLabel.SetSize(width - 6f, 20f);
-                countLabel.text = status;
-                card.AddChild(countLabel);
-            }
-            return card;
+            native.com_Price.visible = status.Length > 0;
+            native.com_Price.isDiscount.selectedIndex = 0;
+            if (native.com_Price.group_Discount != null)
+                native.com_Price.group_Discount.visible = false;
+            if (native.com_Price.txt_OriginalPrice != null)
+                native.com_Price.txt_OriginalPrice.visible = false;
+            if (native.com_Price.txt_DiscountPercent != null)
+                native.com_Price.txt_DiscountPercent.visible = false;
+            native.com_Price.txt_SalePrice.text = status;
+
+            // Scale the intact shop card uniformly, including its in-built
+            // text/portrait positions. A fixed-size GList cell holds the
+            // *scaled visual*, preventing the row layout from collapsing.
+            float scale = Math.Min((width - 8f) / native.width,
+                (height - 8f) / native.height);
+            scale = Math.Max(.1f, Math.Min(1.35f, scale));
+            native.SetScale(scale, scale);
+            native.SetXY((width - native.width * scale) * .5f,
+                (height - native.height * scale) * .5f);
+            var cell = new GComponent {
+                name = "GiftGuide.Character." + usage.HeroId + "." + group,
+                touchable = false,
+                opaque = false
+            };
+            cell.SetSize(width, height);
+            cell.AddChild(native);
+            return cell;
         }
 
         private static void CopyStyle(TextFormat target, GTextField? preferred,
