@@ -8,20 +8,23 @@ using UI;
 
 namespace AstralProbe.Features.Inventory {
     /// <summary>
-    /// Enlarges the *native* Com_PopUpWindow_Bottom frame. A PropDetailWindow or
-    /// PurchaseWindow reuses its contentPane across Show/Hide. Its original
-    /// positions must therefore be captured once per pane, not from the result
-    /// of the previous resize (or FairyGUI's relations will accumulate offsets).
+    /// Expands the existing native popup without moving its authored item
+    /// artwork/text. The frame's baseline is persistent, while the *current*
+    /// content snapshots are captured per display: unrelated items must never
+    /// be reset to positions from another item or controller state.
     /// </summary>
     internal sealed class PropPopupLayout : IDisposable {
         private const float Edge = 12f;
         private const float Inner = 16f;
-        private const float Gap = 9f;
-        private const float ExtraHeight = 310f;
-        private const float MaxLift = 24f;
+        private const float Gap = 5f;
+        private const float ExtraHeight = 390f;
+        private const float PreferredLift = 76f;
+        private const float MaxLift = 160f;
         private static readonly ConditionalWeakTable<GComponent, Baseline> Originals =
             new ConditionalWeakTable<GComponent, Baseline>();
         private readonly Baseline _baseline;
+        private readonly List<Snapshot> _currentSiblings = new List<Snapshot>();
+        private readonly List<Snapshot> _currentDecorations = new List<Snapshot>();
         private bool _disposed;
         private float _left, _top, _width, _height;
 
@@ -44,27 +47,28 @@ namespace AstralProbe.Features.Inventory {
             internal readonly GComponent Pane;
             internal readonly GLabel Frame;
             internal readonly Snapshot Window;
-            internal readonly List<Snapshot> Siblings = new List<Snapshot>();
-            internal readonly List<Snapshot> Decorations = new List<Snapshot>();
             internal Baseline(GComponent pane, GLabel frame) {
                 Pane = pane; Frame = frame; Window = new Snapshot(frame);
-                foreach (GObject obj in pane.GetChildren())
-                    if (obj != null && !obj.isDisposed && !ReferenceEquals(obj, frame))
-                        Siblings.Add(new Snapshot(obj));
-                foreach (GObject obj in frame.GetChildren())
-                    if (obj != null && !obj.isDisposed) Decorations.Add(new Snapshot(obj));
             }
             internal void Restore() {
                 if (Pane == null || Pane.isDisposed || Frame == null || Frame.isDisposed) return;
-                // SetSize may run FairyGUI relations synchronously. Restore
-                // child coordinates AFTER restoring the parent size and pose.
                 Window.Restore();
-                foreach (Snapshot snap in Siblings) snap.Restore();
-                foreach (Snapshot snap in Decorations) snap.Restore();
             }
         }
 
-        private PropPopupLayout(Baseline baseline) { _baseline = baseline; }
+        private PropPopupLayout(Baseline baseline) {
+            _baseline = baseline;
+            // A pooled pane may already have refreshed its item or changed
+            // controller pages. Capture sibling positions NOW rather than
+            // caching those of the first item for the pane's entire lifetime.
+            foreach (GObject obj in baseline.Pane.GetChildren())
+                if (obj != null && !obj.isDisposed &&
+                    !ReferenceEquals(obj, baseline.Frame))
+                    _currentSiblings.Add(new Snapshot(obj));
+            foreach (GObject obj in baseline.Frame.GetChildren())
+                if (obj != null && !obj.isDisposed)
+                    _currentDecorations.Add(new Snapshot(obj));
+        }
 
         internal static PropPopupLayout? Expand(GComponent pane, GLabel background,
             IReadOnlyList<GObject> footer, IReadOnlyList<GObject> content,
@@ -77,9 +81,10 @@ namespace AstralProbe.Features.Inventory {
                 Originals.Remove(pane);
                 baseline = new Baseline(pane, background);
                 Originals.Add(pane, baseline);
-            } else {
-                // The panel is pooled by the original game. Normalize even if
-                // a prior Hide was interrupted by a controller transition.
+            } else if (Math.Abs(background.width - baseline.Window.Width) > .5f ||
+                       Math.Abs(background.height - baseline.Window.Height) > .5f) {
+                // Only repair an interrupted previous expansion. Do not reset
+                // unmodified content when the user opens a different item.
                 baseline.Restore();
             }
             var layout = new PropPopupLayout(baseline);
@@ -127,15 +132,23 @@ namespace AstralProbe.Features.Inventory {
             float dx = newScreenX - screenX;
             float wantedExtraHeight = Math.Max(0f, Math.Min(ExtraHeight,
                 root.height - 2f * Edge - h));
-            float roomBelow = Math.Max(0f, root.height - Edge - (screenY + h));
-            float lift = Math.Min(MaxLift, Math.Min(Math.Max(0f, screenY - Edge),
-                Math.Max(0f, wantedExtraHeight - roomBelow)));
+            // This can be negative if the native popup already extends beyond
+            // a low-resolution viewport. Preserve the overflow when choosing
+            // the lift, otherwise the enlarged frame can still run offscreen.
+            float roomBelow = root.height - Edge - (screenY + h);
+            // Expand upwards as well as downwards, and lift the native frame
+            // so its original artwork is not pressed against the top edge.
+            // The content remains stationary in pane coordinates below.
+            float lift = Math.Min(Math.Max(0f, screenY - Edge),
+                Math.Min(MaxLift, Math.Max(PreferredLift,
+                    wantedExtraHeight - roomBelow)));
             float extraHeight = Math.Max(0f, Math.Min(wantedExtraHeight, roomBelow + lift));
             if (extraWidth < 65f || extraHeight < 115f) return false;
 
             // Widening the frame does not make the native description taller.
             // Expand it only within the original text area; the baseline
             // snapshots restore its native height on close.
+            float expandedDescriptionHeight = 0f;
             if (description != null && !description.isDisposed && description.parent == pane) {
                 float reserveBottom = y + h - 72f;
                 if (footer != null) foreach (GObject control in footer)
@@ -144,8 +157,10 @@ namespace AstralProbe.Features.Inventory {
                         reserveBottom = Math.Min(reserveBottom, control.y - Gap);
                 float maxHeight = Math.Max(description.height, reserveBottom - description.y);
                 float desired = Math.Max(description.height, description.textHeight + 7f);
-                if (desired > description.height + 1f && maxHeight > description.height + 1f)
-                    description.SetSize(description.width, Math.Min(maxHeight, desired), true);
+                if (desired > description.height + 1f && maxHeight > description.height + 1f) {
+                    expandedDescriptionHeight = Math.Min(maxHeight, desired);
+                    description.SetSize(description.width, expandedDescriptionHeight, true);
+                }
             }
 
             // Compute the actual bottom of authored content BEFORE changing
@@ -160,29 +175,33 @@ namespace AstralProbe.Features.Inventory {
             float footerBottom = contentBottom;
             if (footer != null) foreach (GObject obj in footer)
                 footerBottom = ContentBottom(obj, pane, footerBottom, originalBottom);
+            float buttonReserve = 0f;
             if (frame is UICom_PopUpWindow_Bottom native) {
                 GButton?[] nativeButtons = { native.btn_Sure, native.btn_Sure_Only, native.btn_Cancel };
                 foreach (GButton? button in nativeButtons) {
                     if (button == null || button.isDisposed || !button.visible) continue;
-                    footerBottom = Math.Max(footerBottom, y + button.y + button.height);
+                    if (afterFooter)
+                        footerBottom = Math.Max(footerBottom, y + button.y + button.height);
+                    else
+                        buttonReserve = Math.Max(buttonReserve, h - button.y);
                 }
             }
 
-            // Move the *whole original window* uniformly. Never move the item
-            // loader, description or footer independently, and never push a
-            // footer down by the expansion height. This prevents the old
-            // image/text offsets accumulating on each reopening.
+            // The expanded frame is centered around the *existing content*.
+            // FairyGUI can move siblings through size relations. Immediately
+            // undo that automatic movement; the item's image and text must
+            // remain at their original absolute positions (no +dx/-lift).
             frame.SetSize(w + extraWidth, h + extraHeight, true);
             frame.SetXY(x + dx, y - lift);
-            foreach (Snapshot snap in original.Siblings) {
-                GObject obj = snap.Item;
-                if (obj == null || obj.isDisposed) continue;
-                bool fullScreenVeil = snap.Width >= pane.width * .85f &&
-                    snap.Height >= pane.height * .85f;
-                if (!fullScreenVeil) obj.SetXY(snap.X + dx, snap.Y - lift);
-                else snap.Restore();
-            }
-            foreach (Snapshot snap in original.Decorations) {
+            foreach (Snapshot snap in _currentSiblings) snap.Restore();
+            // Reapply the extra text height after restoring FairyGUI relation
+            // side effects, or the snapshot will silently undo the expansion.
+            if (expandedDescriptionHeight > 0f && description != null &&
+                !description.isDisposed)
+                description.SetSize(description.width, expandedDescriptionHeight, true);
+            foreach (Snapshot snap in _currentSiblings)
+                if (!ReferenceEquals(snap.Item, description)) snap.Restore();
+            foreach (Snapshot snap in _currentDecorations) {
                 GObject obj = snap.Item;
                 if (obj == null || obj.isDisposed) continue;
                 bool backdrop = (obj is GImage || obj is GGraph || obj is GLoader) &&
@@ -193,18 +212,28 @@ namespace AstralProbe.Features.Inventory {
                 } else if (frame is UICom_PopUpWindow_Bottom bottom &&
                     ReferenceEquals(obj, bottom.closeButton)) {
                     obj.SetXY(snap.X + extraWidth, snap.Y);
+                } else if (!afterFooter && frame is UICom_PopUpWindow_Bottom actions &&
+                    (ReferenceEquals(obj, actions.btn_Sure) ||
+                     ReferenceEquals(obj, actions.btn_Sure_Only) ||
+                     ReferenceEquals(obj, actions.btn_Cancel))) {
+                    // Detail-window action buttons belong below the guide,
+                    // rather than creating a blank strip above the guide.
+                    obj.SetXY(snap.X - dx, snap.Y + lift + extraHeight);
                 } else {
-                    // Keep the authored title and footer in the center of the
-                    // expanded frame, at their ORIGINAL vertical position.
-                    obj.SetXY(snap.X + extraWidth * .5f, snap.Y);
+                    // Offset the *local* coordinates to cancel out the new
+                    // frame origin. This retains the exact old visual position
+                    // of the title and embedded buttons; only the frame grows.
+                    obj.SetXY(snap.X - dx, snap.Y + lift);
                 }
             }
 
             _left = x + dx + Inner;
             _width = w + extraWidth - 2f * Inner;
-            _top = Math.Max(contentBottom, footerBottom) + Gap + (-lift);
+            // Existing pane children were not lifted: use their REAL bottom.
+            _top = Math.Max(contentBottom, footerBottom) + Gap;
             float maxBottom = y - lift + h + extraHeight - Inner;
-            _height = Math.Max(0f, maxBottom - _top);
+            _height = Math.Max(0f, maxBottom - _top -
+                (afterFooter ? 0f : buttonReserve));
             return _width >= 270f && _height >= 105f;
         }
 
@@ -217,6 +246,8 @@ namespace AstralProbe.Features.Inventory {
             if (_disposed) return;
             _disposed = true;
             _baseline.Restore();
+            foreach (Snapshot snap in _currentDecorations) snap.Restore();
+            foreach (Snapshot snap in _currentSiblings) snap.Restore();
         }
     }
 }
