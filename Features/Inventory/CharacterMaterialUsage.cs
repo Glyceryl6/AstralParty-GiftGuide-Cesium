@@ -4,6 +4,18 @@ using GameLogic;
 using UI;
 
 namespace AstralProbe.Features.Inventory {
+    internal readonly struct ContractRequirement {
+        internal readonly int ItemId;
+        internal readonly int Owned;
+        internal readonly int Required;
+
+        internal ContractRequirement(int itemId, int owned, int required) {
+            ItemId = itemId;
+            Owned = owned;
+            Required = required;
+        }
+    }
+
     internal sealed class CharacterMaterialUsage {
         internal int HeroId;
         internal int SortOrder;
@@ -14,6 +26,12 @@ namespace AstralProbe.Features.Inventory {
         internal int Quality;
         internal bool Owned;
         internal bool GiftPreferred;
+        internal int FavorLevel;
+        internal int FavorExp;
+        internal int FavorNeedExp;
+        internal bool FavorDeepened;
+        internal int PotentialLevel;
+        internal readonly List<ContractRequirement> ContractRequirements = new();
         internal bool ContractMaterial;
         internal int ContractMissing;
         internal bool PotentialMaterial;
@@ -67,8 +85,20 @@ namespace AstralProbe.Features.Inventory {
                         (!string.IsNullOrWhiteSpace(painting.ProfilePhoto)
                             ? painting.ProfilePhoto : painting.GetCharacterPhoto()),
                     Quality = painting == null ? 0 : (int)painting.SkinAppearanceType,
-                    Owned = card?.IsHas ?? false
+                    Owned = card?.IsHas ?? false,
+                    FavorLevel = card?.LV ?? 0,
+                    FavorExp = Math.Max(0, card?.Exp ?? 0),
+                    PotentialLevel = card?.PveData?.Level ?? 0
                 };
+
+                if (favors.LevelDict != null && favors.LevelDict.TryGetValue(
+                    usage.FavorLevel, out FavorLevelConfigure currentFavor) && currentFavor != null)
+                    usage.FavorNeedExp = Math.Max(0, currentFavor.NeedExp);
+                int maxFavorLevel = favors.Levels != null && favors.Levels.Count > 0
+                    ? favors.Levels[favors.Levels.Count - 1].Id : 5;
+                usage.FavorDeepened = info.HasKizuna && card != null &&
+                    card.isBreakThrough && (card.LV >= maxFavorLevel ||
+                        (usage.FavorNeedExp > 0 && card.Exp >= usage.FavorNeedExp));
 
                 var giftDict = characters.HeroFavorGiftDict;
                 if (giftDict != null && giftDict.TryGetValue(info.HeroFavorGift,
@@ -90,6 +120,15 @@ namespace AstralProbe.Features.Inventory {
                     int need = Need(contract.NeedMaterials, itemId);
                     usage.ContractMaterial = need > 0;
                     usage.ContractMissing = usage.ContractSigned ? 0 : Math.Max(0, need - inBag);
+                    if (usage.ContractMaterial && contract.NeedMaterials != null) {
+                        // The native HeroPanel displays the full material list,
+                        // not only the item currently being inspected.
+                        foreach (KeyValuePair<int, int> material in contract.NeedMaterials) {
+                            if (material.Key <= 0 || material.Value <= 0) continue;
+                            usage.ContractRequirements.Add(new ContractRequirement(material.Key,
+                                Math.Max(0, bag.GetItemCount(material.Key)), material.Value));
+                        }
+                    }
                 }
 
                 var breaks = info.PveBreak;

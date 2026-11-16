@@ -21,6 +21,8 @@ namespace AstralProbe.Features.Inventory {
         private const int RowGap = 5;
         private const float HeadingHeight = 27f;
         private const float SectionGap = 10f;
+        private const float ContractItemHeight = 42f;
+        private const float ContractFooterGap = 6f;
 
         private GuideViewport? _viewport;
         private GComponent? _pane;
@@ -94,6 +96,12 @@ namespace AstralProbe.Features.Inventory {
                     typeof(UICom_Price));
                 UIObjectFactory.SetPackageItemExtension(UIButton_GoodsItem_Store.URL,
                     typeof(UIButton_GoodsItem_Store));
+                UIObjectFactory.SetPackageItemExtension(UICom_Item.URL,
+                    typeof(UICom_Item));
+                UIObjectFactory.SetPackageItemExtension(UIHero_Com_BreakThrough.URL,
+                    typeof(UIHero_Com_BreakThrough));
+                UIObjectFactory.SetPackageItemExtension(UIHero_com_show.URL,
+                    typeof(UIHero_com_show));
 
                 stage = "扩展原版弹窗";
                 layout = PropPopupLayout.Expand(pane, background, footer, objects,
@@ -107,6 +115,7 @@ namespace AstralProbe.Features.Inventory {
                 stage = "查找原版滚动条";
                 string? verticalBarUrl = FindVerticalScrollBar();
                 if (string.IsNullOrEmpty(verticalBarUrl)) {
+                    UiPackageWarmup.RequestNativeScrollBar();
                     _retry = DateTime.UtcNow.AddSeconds(5);
                     SdkLog.Warn("GiftGuide", "尚未找到原版 GScrollBar，角色列表等待 UI 包就绪");
                     return false;
@@ -134,6 +143,7 @@ namespace AstralProbe.Features.Inventory {
                     throw new InvalidOperationException("商店角色卡片尚未就绪");
                 float cellWidth = sample.width;
                 float cellHeight = sample.height;
+                string nativeFont = sample.com_ItemName?.txt_Name?.textFormat.font ?? "";
                 sample.Dispose();
                 scroll.scrollStep = Math.Max(28f, cellHeight * .38f);
 
@@ -154,11 +164,11 @@ namespace AstralProbe.Features.Inventory {
                 var scrollLabels = new List<GTextField>();
                 float y = Padding;
                 y = AddSection(sections, usages, 0, "契约", name, description,
-                    inner, columns, cellWidth, cellHeight, y, scrollLabels);
+                    inner, columns, cellWidth, cellHeight, nativeFont, y, scrollLabels);
                 y = AddSection(sections, usages, 1, "潜能", name, description,
-                    inner, columns, cellWidth, cellHeight, y, scrollLabels);
+                    inner, columns, cellWidth, cellHeight, nativeFont, y, scrollLabels);
                 y = AddSection(sections, usages, 2, "偏好礼物", name, description,
-                    inner, columns, cellWidth, cellHeight, y, scrollLabels);
+                    inner, columns, cellWidth, cellHeight, nativeFont, y, scrollLabels);
                 if (y <= Padding) {
                     sections.Dispose();
                     return false;
@@ -207,8 +217,8 @@ namespace AstralProbe.Features.Inventory {
 
         private static float AddSection(GComponent content, IReadOnlyList<CharacterMaterialUsage> all,
             int group, string heading, GTextField? nameStyle, GTextField? descriptionStyle,
-            float width, int columns, float cellWidth, float cellHeight, float y,
-            List<GTextField> scrollLabels) {
+            float width, int columns, float cellWidth, float cellHeight, string nativeFont,
+            float y, List<GTextField> scrollLabels) {
             var members = new List<CharacterMaterialUsage>();
             foreach (CharacterMaterialUsage? usage in all) {
                 if (usage == null) continue;
@@ -228,6 +238,7 @@ namespace AstralProbe.Features.Inventory {
             };
             TextFormat headingFormat = title.textFormat;
             CopyStyle(headingFormat, nameStyle, descriptionStyle, 16, 21);
+            if (!string.IsNullOrEmpty(nativeFont)) headingFormat.font = nativeFont;
             headingFormat.bold = true;
             title.textFormat = headingFormat;
             title.SetXY(Padding, y);
@@ -235,6 +246,19 @@ namespace AstralProbe.Features.Inventory {
             content.AddChild(title);
             y += HeadingHeight + 3f;
 
+            // The native material cells use an extra strip below the original
+            // card. All rows in one GList have the same height; other sections
+            // keep the authored store-card size unchanged.
+            int materialColumns = Math.Max(1, Math.Min(3, (int)(cellWidth / 49f)));
+            float footerHeight = 0f;
+            if (group == 0) {
+                int maxCount = 0;
+                foreach (CharacterMaterialUsage member in members)
+                    maxCount = Math.Max(maxCount, member.ContractRequirements.Count);
+                footerHeight = ContractFooterGap + ContractItemHeight *
+                    Math.Max(1, (maxCount + materialColumns - 1) / materialColumns);
+            }
+            float itemHeight = cellHeight + footerHeight;
             var list = new GList {
                 name = "GiftGuide.NativeStoreItems." + group,
                 layout = ListLayoutType.FlowHorizontal,
@@ -246,22 +270,22 @@ namespace AstralProbe.Features.Inventory {
                 touchable = false
             };
             int rows = (members.Count + columns - 1) / columns;
-            float listHeight = rows * cellHeight + Math.Max(0, rows - 1) * RowGap;
+            float listHeight = rows * itemHeight + Math.Max(0, rows - 1) * RowGap;
             list.SetSize(width, listHeight);
             list.SetXY(Padding, y);
             content.AddChild(list);
             foreach (CharacterMaterialUsage usage in members)
-                list.AddChild(BuildCharacterCard(usage, group, scrollLabels));
+                list.AddChild(BuildCharacterCard(usage, group, cellWidth, cellHeight,
+                    footerHeight, materialColumns, nativeFont, scrollLabels));
             list.EnsureBoundsCorrect();
             return y + listHeight;
         }
 
         private static GComponent BuildCharacterCard(CharacterMaterialUsage usage,
-            int group, List<GTextField> scrollLabels) {
-            // Use the complete native store product component. The original
-            // hierarchy draws com_Quality and then loader_Goods in the correct
-            // order; manually placing a TextureLoader *inside* the quality
-            // frame put portraits behind opaque parts of that frame.
+            int group, float cellWidth, float cellHeight, float footerHeight, int materialColumns,
+            string nativeFont, List<GTextField> scrollLabels) {
+            // Retain the game's entire original shop card, including portrait
+            // frame, size, title and price area.
             UIButton_GoodsItem_Store native = UIButton_GoodsItem_Store.CreateInstance();
             if (native == null || native.width < 4f || native.height < 4f ||
                 native.com_Quality == null || native.loader_Goods == null ||
@@ -302,14 +326,16 @@ namespace AstralProbe.Features.Inventory {
             native.com_ItemName.visible = true;
             scrollLabels.Add(label);
 
-            string status = group == 0
-                ? (usage.ContractSigned ? "" : usage.ContractMissing > 0
-                    ? "缺少 " + usage.ContractMissing : "材料已齐")
-                : group == 1
-                    ? (usage.PotentialAwakened ? "" : usage.PotentialMissing > 0
-                        ? "缺少 " + usage.PotentialMissing : "材料已齐")
-                    : "偏好礼物";
-            native.com_Price.visible = status.Length > 0;
+            GTextField price = native.com_Price.txt_SalePrice;
+            TextFormat priceFormat = price.textFormat;
+            if (!string.IsNullOrEmpty(nativeFont)) priceFormat.font = nativeFont;
+            price.textFormat = priceFormat;
+            bool showIcon = (group == 1 && usage.PotentialAwakened) ||
+                (group == 2 && usage.FavorDeepened);
+            string status = group == 1
+                ? (usage.PotentialMissing > 0 ? "缺少 " + usage.PotentialMissing : "材料已齐")
+                : group == 2 ? usage.FavorExp + "/" + usage.FavorNeedExp : "";
+            native.com_Price.visible = group != 0 && !showIcon;
             native.com_Price.isDiscount.selectedIndex = 0;
             if (native.com_Price.group_Discount != null)
                 native.com_Price.group_Discount.visible = false;
@@ -317,11 +343,72 @@ namespace AstralProbe.Features.Inventory {
                 native.com_Price.txt_OriginalPrice.visible = false;
             if (native.com_Price.txt_DiscountPercent != null)
                 native.com_Price.txt_DiscountPercent.visible = false;
-            native.com_Price.txt_SalePrice.text = status;
+            price.text = status;
 
-            // GList owns the native component directly. No wrapper, scaling
-            // or re-centering: the same sizing/layout as a real StorePanel row.
-            return native;
+            if (showIcon) {
+                UIHero_com_show marker = UIHero_com_show.CreateInstance();
+                marker.touchable = false;
+                marker.Status.selectedIndex = group == 2 ? 1 : 3;
+                marker.releationPowerUp.selectedIndex = group == 2 ? 1 : 0;
+                marker.LV_txt.text = (group == 2 ? usage.FavorLevel : usage.PotentialLevel).ToString();
+                GComponent target = native.com_Price;
+                float scale = Math.Min(1f, Math.Min(
+                    (target.width - 4f) / Math.Max(1f, marker.width),
+                    (target.height - 2f) / Math.Max(1f, marker.height)));
+                marker.SetScale(scale, scale);
+                marker.SetXY(target.x + (target.width - marker.width * scale) * .5f,
+                    target.y + (target.height - marker.height * scale) * .5f);
+                native.AddChild(marker);
+            }
+
+            if (group != 0) return native;
+
+            // Miniature counterpart of HeroPanel.com_Gift.list_BreakThrough:
+            // native UIHero_Com_BreakThrough entries with the same icon and
+            // red/green current/required counts, fitted below each store card.
+            var wrapper = new GComponent {
+                name = "GiftGuide.ContractCard",
+                touchable = false,
+                opaque = false
+            };
+            wrapper.SetSize(cellWidth, cellHeight + footerHeight);
+            wrapper.AddChild(native);
+            var requirements = new GList {
+                name = "GiftGuide.list_BreakThrough",
+                layout = ListLayoutType.FlowHorizontal,
+                columnGap = 2,
+                lineGap = 0,
+                columnCount = materialColumns,
+                autoResizeItem = false,
+                touchable = false
+            };
+            requirements.SetXY(0f, cellHeight + 2f);
+            requirements.SetSize(cellWidth, footerHeight - 2f);
+            wrapper.AddChild(requirements);
+            float slotWidth = (cellWidth - (materialColumns - 1) * 2f) / materialColumns;
+            foreach (ContractRequirement need in usage.ContractRequirements) {
+                UIHero_Com_BreakThrough item = UIHero_Com_BreakThrough.CreateInstance();
+                if (item == null || !(item.com_Item is UICom_Item material))
+                    throw new InvalidOperationException("原版契约材料组件尚未准备好");
+                material.RefreshItem(need.ItemId, showNum: false);
+                material.touchable = false;
+                item.touchable = false;
+                item.txt_Num.SetVar("color", need.Owned < need.Required ? "FF0000" : "00FF00")
+                    .SetVar("curNum", need.Owned.ToString())
+                    .SetVar("target", need.Required.ToString()).FlushVars();
+                var slot = new GComponent { touchable = false, opaque = false };
+                slot.SetSize(slotWidth, ContractItemHeight);
+                float scale = Math.Min(1f, Math.Min(
+                    (slotWidth - 3f) / Math.Max(1f, item.width),
+                    (ContractItemHeight - 3f) / Math.Max(1f, item.height)));
+                item.SetScale(scale, scale);
+                item.SetXY((slotWidth - item.width * scale) * .5f,
+                    (ContractItemHeight - item.height * scale) * .5f);
+                slot.AddChild(item);
+                requirements.AddChild(slot);
+            }
+            requirements.EnsureBoundsCorrect();
+            return wrapper;
         }
 
         private static void CopyStyle(TextFormat target, GTextField? preferred,

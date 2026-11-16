@@ -6,15 +6,19 @@ using FairyGUI;
 namespace AstralProbe.Features.Inventory {
     /// <summary>
     /// The native store quality/name components live in Common_External.
-    /// The scroll viewport is now created directly and no longer depends on
-    /// the unrelated Setting package.
+    /// The scroll viewport uses the game's own GScrollBar, and card status
+    /// icons and breakthrough items come from the Hero package.
     /// </summary>
     internal static class UiPackageWarmup {
         private const string RequiredPackage = "Common_External";
         private static readonly HashSet<string> Loading = new();
         private static readonly Dictionary<string, DateTime> RetryAfter = new();
 
-        internal static bool Ready() => Ensure(RequiredPackage);
+        internal static bool Ready() => Ensure(RequiredPackage) && Ensure("Hero");
+
+        // The mail package contains the game's own vertical scrollbar design.
+        // Load it only if no native scrollbar exists in the already-open UI.
+        internal static void RequestNativeScrollBar() => Ensure("Mail");
 
         private static bool Ensure(string package) {
             if (UIPackage.GetByName(package) != null) return true;
