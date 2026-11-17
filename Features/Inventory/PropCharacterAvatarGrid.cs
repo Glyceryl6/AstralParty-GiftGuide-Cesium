@@ -479,9 +479,13 @@ namespace AstralProbe.Features.Inventory {
                 hero.com_show.Status.selectedIndex = 1;
                 hero.com_show.releationPowerUp.selectedIndex = usage.FavorDeepened ? 1 : 0;
                 hero.com_show.LV_txt.text = usage.FavorLevel.ToString();
-                if (!usage.FavorDeepened)
-                    AddHeroStatus(hero, usage.FavorExp + "/" + usage.FavorNeedExp,
-                        favorTitle);
+                if (!usage.FavorDeepened) {
+                    GTextField exp = AddHeroStatus(hero,
+                        usage.FavorExp + "/" + usage.FavorNeedExp, favorTitle);
+                    // Preferred-gift lists in details, purchase and selection
+                    // windows share the same anchor above native skin quality.
+                    PlaceFavorAboveSkinQuality(hero, exp);
+                }
             } else if (group == 1 && usage.Owned) {
                 hero.com_show.visible = true;
                 hero.com_show.Status.selectedIndex = usage.PotentialAwakened ? 3 : 2;
