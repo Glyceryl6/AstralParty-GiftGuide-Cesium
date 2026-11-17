@@ -529,7 +529,9 @@ namespace AstralProbe.Features.Inventory {
             text.SetPivot(0f, 0f, false);
             text.align = AlignType.Center;
             text.autoSize = AutoSizeType.None;
-            float height = Math.Max(26f, anchor.height);
+            // The old com_show-sized text box had large invisible vertical
+            // padding, making EXP appear far above the icon underneath.
+            float height = Math.Max(28f, format.size + 8f);
             text.SetSize(width, height);
             text.SetXY(4f, Math.Max(2f,
                 Math.Min(hero.txt_chrname.y - height - 3f,
@@ -561,7 +563,9 @@ namespace AstralProbe.Features.Inventory {
 
         private static void PlaceFavorAbove(UIHero_Button_Hero hero,
             GTextField experience, float targetTop) {
-            const float gap = 4f;
+            // Bring the visible glyph closer to the material/skin-quality
+            // marker while leaving a small gap for the native-style outline.
+            const float gap = 1f;
             float maxY = Math.Max(2f, hero.height - experience.height - 2f);
             float y = Math.Max(2f, Math.Min(maxY,
                 targetTop - experience.height - gap));
