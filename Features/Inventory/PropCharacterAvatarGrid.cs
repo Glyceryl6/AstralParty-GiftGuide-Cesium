@@ -467,6 +467,8 @@ namespace AstralProbe.Features.Inventory {
             caption.SetSize(Math.Max(1f, hero.width - 8f), nameHeight);
             caption.SetXY(4f, Math.Max(2f, hero.height - nameHeight - 5f));
             caption.align = AlignType.Center;
+            // The original selector grays out an unavailable hero button.
+            hero.grayed = !usage.Owned;
 
             hero.com_show.visible = false;
             hero.com_show.releationPowerUp.selectedIndex = 0;
@@ -486,7 +488,8 @@ namespace AstralProbe.Features.Inventory {
                 hero.com_show.releationPowerUp.selectedIndex = group == 2 ? 1 : 0;
                 hero.com_show.LV_txt.text = (group == 2
                     ? usage.FavorLevel : usage.PotentialLevel).ToString();
-            } else if (group == 2) {
+            } else if (group == 2 && usage.Owned) {
+                // Unowned heroes are grayscale and do not show favor experience.
                 AddHeroStatus(hero, usage.FavorExp + "/" + usage.FavorNeedExp,
                     favorTitle);
             }
@@ -683,7 +686,7 @@ namespace AstralProbe.Features.Inventory {
 
             native.touchable = false;
             native.opaque = false;
-            native.grayed = false;
+            native.grayed = !usage.Owned;
             if (native.sellOut != null) native.sellOut.selectedIndex = 0;
             if (native.owned != null) native.owned.selectedIndex = 0;
             if (native.isEmpty != null) native.isEmpty.selectedIndex = 0;
@@ -720,9 +723,9 @@ namespace AstralProbe.Features.Inventory {
             price.textFormat = priceFormat;
             bool showIcon = (group == 1 && usage.PotentialAwakened) ||
                 (group == 2 && usage.FavorDeepened);
-            string status = group == 2
+            string status = group == 2 && usage.Owned
                 ? usage.FavorExp + "/" + usage.FavorNeedExp : "";
-            native.com_Price.visible = group == 2 && !showIcon;
+            native.com_Price.visible = group == 2 && usage.Owned && !showIcon;
             native.com_Price.isDiscount.selectedIndex = 0;
             if (native.com_Price.group_Discount != null)
                 native.com_Price.group_Discount.visible = false;
