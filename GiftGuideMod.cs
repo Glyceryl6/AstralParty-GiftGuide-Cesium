@@ -8,6 +8,7 @@ namespace GiftGuide {
     public sealed class GiftGuideMod : ModBase {
         private CharacterMaterialFeature? _materials;
         private PreferredGiftBadgeService? _preferred;
+        private HeroPanelMaterialOverlayService? _heroOverlays;
 
         public override string Name => "GiftGuide";
         public override string Version => "0.2.23";
@@ -17,20 +18,24 @@ namespace GiftGuide {
         public override void OnInitialize() {
             _materials = new CharacterMaterialFeature { Enabled = true };
             _preferred = new PreferredGiftBadgeService { Enabled = true };
+            _heroOverlays = new HeroPanelMaterialOverlayService { Enabled = true };
         }
         public override void OnUpdate() {
             _materials?.Tick();
             _preferred?.Tick();
+            _heroOverlays?.Tick();
         }
         public override void OnSceneLoaded(Scene scene, LoadSceneMode mode) => ClearScene();
         public override void OnSceneUnloaded(Scene scene) => ClearScene();
         private void ClearScene() {
             _materials?.Clear();
             _preferred?.Clear();
+            _heroOverlays?.Clear();
         }
         public override void OnUnload() {
             _materials?.Dispose(); _materials = null;
             _preferred?.Dispose(); _preferred = null;
+            _heroOverlays?.Dispose(); _heroOverlays = null;
         }
     }
 }

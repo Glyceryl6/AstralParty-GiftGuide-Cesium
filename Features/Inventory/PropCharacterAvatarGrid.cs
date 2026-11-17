@@ -84,7 +84,7 @@ namespace AstralProbe.Features.Inventory {
             }
         }
 
-        private static FavorTitleAppearance? ReadNativeFavorTitle() {
+        internal static FavorTitleAppearance? ReadNativeFavorTitle() {
             GObject? slider = null;
             try {
                 // Force the base progress-bar class; we only need its authored
@@ -513,7 +513,7 @@ namespace AstralProbe.Features.Inventory {
             return cell;
         }
 
-        private static void AddHeroStatus(UIHero_Button_Hero hero, string status,
+        internal static GTextField AddHeroStatus(UIHero_Button_Hero hero, string status,
             FavorTitleAppearance? favorTitle) {
             UIHero_com_show anchor = hero.com_show;
             float width = Math.Max(1f, hero.width - 8f);
@@ -544,6 +544,7 @@ namespace AstralProbe.Features.Inventory {
                 Math.Min(hero.txt_chrname.y - height - 3f,
                     anchor.y + anchor.height + 2f)));
             hero.AddChild(text);
+            return text;
         }
 
         /// <summary>
@@ -591,11 +592,11 @@ namespace AstralProbe.Features.Inventory {
             }
         }
 
-        internal static void AddHeroMaterials(UIHero_Button_Hero hero,
+        internal static GList? AddHeroMaterials(UIHero_Button_Hero hero,
             IReadOnlyList<ContractRequirement> requirements, bool potential,
             FavorTitleAppearance? favorTitle, float reserveTop = 0f) {
             int count = requirements.Count;
-            if (count == 0) return;
+            if (count == 0) return null;
 
             // Pull each icon and its count inward together, keeping both rows
             // directly above the name (the original portrait stays untouched).
@@ -683,6 +684,7 @@ namespace AstralProbe.Features.Inventory {
                 materials.AddChild(item);
             }
             materials.EnsureBoundsCorrect();
+            return materials;
         }
 
         private static GComponent BuildLegacyStoreCard(CharacterMaterialUsage usage,

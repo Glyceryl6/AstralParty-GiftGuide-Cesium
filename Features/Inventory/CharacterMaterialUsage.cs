@@ -176,6 +176,60 @@ namespace AstralProbe.Features.Inventory {
             return true;
         }
 
+        /// <summary>
+        /// Read only the hero actually rendered by HeroPanel. The selector is
+        /// reused by FairyGUI, so never cache a HeroCardData across ticks.
+        /// Unlike item-specific TryRead, both material groups are populated.
+        /// </summary>
+        internal static bool TryReadHero(int heroId, out CharacterMaterialUsage usage) {
+            usage = new CharacterMaterialUsage { HeroId = heroId };
+            if (heroId <= 0 || !GameLogicManager.hasInstance) return false;
+            GameLogicManager manager = GameLogicManager.inst;
+            HeroCardData? card = manager.heroCard?.GetCardData(heroId);
+            CharacterInfoConfigure? info = card?.InfoConfig;
+            FavorConfigure favors = StaticConfigure.Favor;
+            if (card == null || info == null || favors == null || manager.bag == null)
+                return false;
+
+            usage.Owned = card.IsHas;
+            usage.ContractSigned = card.isBreakThrough;
+            usage.FavorLevel = card.LV;
+            usage.FavorExp = Math.Max(0, card.Exp);
+            usage.PotentialLevel = card.PveData?.Level ?? 0;
+            if (favors.LevelDict != null && favors.LevelDict.TryGetValue(
+                usage.FavorLevel, out FavorLevelConfigure level) && level != null)
+                usage.FavorNeedExp = Math.Max(0, level.NeedExp);
+            int maxLevel = favors.Levels != null && favors.Levels.Count > 0
+                ? favors.Levels[favors.Levels.Count - 1].Id : 5;
+            usage.FavorDeepened = info.HasKizuna && usage.ContractSigned &&
+                (card.LV >= maxLevel || (usage.FavorNeedExp > 0 &&
+                card.Exp >= usage.FavorNeedExp));
+
+            if (!usage.ContractSigned) {
+                FavorBreakthroughConfigure? contract = info.FavorBreakthroughConfigure;
+                if (contract?.NeedMaterials != null) {
+                    foreach (KeyValuePair<int, int> material in contract.NeedMaterials) {
+                        if (material.Key <= 0 || material.Value <= 0) continue;
+                        usage.ContractRequirements.Add(new ContractRequirement(material.Key,
+                            Math.Max(0, manager.bag.GetItemCount(material.Key)), material.Value));
+                    }
+                }
+            }
+            PVENurturanceBreakConfigure? talent = card.PveData?.GetCurrentTalentConfigure();
+            usage.PotentialAwakened = talent != null &&
+                card.PveData?.IsTalentUnlock(talent.Id) == true;
+            if (!usage.PotentialAwakened && talent?.NeedMaterials != null) {
+                foreach (KeyValuePair<int, int> material in talent.NeedMaterials) {
+                    if (material.Key <= 0 || material.Value <= 0) continue;
+                    usage.PotentialRequirements.Add(new ContractRequirement(material.Key,
+                        Math.Max(0, manager.bag.GetItemCount(material.Key)), material.Value));
+                }
+            }
+            usage.ContractRequirements.Sort((a, b) => a.ItemId.CompareTo(b.ItemId));
+            usage.PotentialRequirements.Sort((a, b) => a.ItemId.CompareTo(b.ItemId));
+            return true;
+        }
+
         private static int Need(Google.Protobuf.Collections.MapField<int, int> materials, int itemId) {
             return materials != null && materials.TryGetValue(itemId, out int count) ? count : 0;
         }
