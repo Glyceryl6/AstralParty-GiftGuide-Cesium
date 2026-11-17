@@ -23,6 +23,9 @@ namespace AstralProbe.Features.Inventory {
         private const int RowGap = 5;
         private const float HeroNameHeight = 29f;
         private const int ContractCountFontSize = 21;
+        // v0.2.22's light, outlined label was readable; use a slightly
+        // larger fixed face without inheriting the dark native slider fill.
+        private const int FavorExpFontSize = 20;
         private const float HeadingHeight = 36f;
         private const float SectionGap = 12f;
         private const float ContractColumnGap = 2f;
@@ -64,18 +67,20 @@ namespace AstralProbe.Features.Inventory {
                 target.outlineColor = Format.outlineColor;
                 target.shadowOffset = Format.shadowOffset;
                 target.shadowColor = Format.shadowColor;
-                target.gradientColor = Format.gradientColor;
+                // The native progress title sometimes has a dark fill. Keep
+                // its font metrics but restore the readable light v0.2.22 fill.
+                target.size = FavorExpFontSize;
+                target.color = new Color(1f, .975f, .99f, 1f);
+                target.gradientColor = null;
                 field.textFormat = target;
                 ApplyOutline(field);
             }
 
             internal void ApplyOutline(GTextField field) {
-                // A thin outline is retained even if the native title has no
-                // authored outline; material counts need the same contrast.
-                float stroke = Math.Max(1f, Stroke);
-                field.stroke = stroke;
-                field.strokeColor = Stroke > .05f ? StrokeColor :
-                    new Color(.22f, .12f, .27f, 1f);
+                // Always use the same dark fine edge for experience and the
+                // two types of material counts. Never touch the source title.
+                field.stroke = 1.25f;
+                field.strokeColor = new Color(.22f, .12f, .27f, 1f);
             }
         }
 
@@ -465,7 +470,9 @@ namespace AstralProbe.Features.Inventory {
             // the name in v0.2.19. The later pivot-ignoring SetXY moved it right.
             // Leave it slightly lower, close to the native hero-button layout.
             caption.SetSize(Math.Max(1f, hero.width - 8f), nameHeight);
-            caption.SetXY(4f, Math.Max(2f, hero.height - nameHeight - 5f));
+            // The native authored pivot/relation offsets shift its visible glyphs
+            // to the right. Move just this card's caption left and down.
+            caption.SetXY(-9f, Math.Max(2f, hero.height - nameHeight - 1f));
             caption.align = AlignType.Center;
             // The original selector grays out an unavailable hero button.
             hero.grayed = !usage.Owned;
@@ -518,7 +525,9 @@ namespace AstralProbe.Features.Inventory {
                 // readable outline rather than estimating a tiny 18px label.
                 TextFormat format = text.textFormat;
                 format.CopyFrom(hero.txt_chrname.textFormat);
-                format.size = Math.Max(20, format.size);
+                format.size = FavorExpFontSize;
+                format.color = new Color(1f, .975f, .99f, 1f);
+                format.gradientColor = null;
                 text.textFormat = format;
                 text.stroke = 1f;
                 text.strokeColor = new Color(.22f, .12f, .27f, 1f);
