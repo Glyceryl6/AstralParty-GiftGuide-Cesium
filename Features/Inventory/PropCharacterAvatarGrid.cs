@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using CesiumLoader.SDK.Logging;
 using FairyGUI;
 using FairyGUI.Utils;
+using UnityEngine;
 using Tools;
 using UI;
 
@@ -23,6 +24,8 @@ namespace AstralProbe.Features.Inventory {
         private const float SectionGap = 10f;
         private const float ContractColumnGap = 2f;
         private const float ContractRowGap = 2f;
+        // Exact pink used by SettingWindow for its active controls.
+        private static readonly Color SettingPink = new Color(1f, .1686f, .5686f, 1f);
 
         private GuideViewport? _viewport;
         private GComponent? _pane;
@@ -67,6 +70,44 @@ namespace AstralProbe.Features.Inventory {
                 }
             }
             return fallback;
+        }
+
+        private static void StyleNativeScrollbar(GScrollBar? bar) {
+            if (bar == null || bar.isDisposed) return;
+            // Resize the native draggable control itself (not a decorative overlay).
+            // Do this before sizing the viewport so ScrollPane reserves the new gutter.
+            float oldWidth = Math.Max(1f, bar.width);
+            float width = Math.Max(24f, Math.Min(34f, oldWidth * 1.55f));
+            if (width > oldWidth + .5f) {
+                GObject? track = bar.GetChild("bar");
+                GObject? grip = bar.GetChild("grip");
+                float trackWidth = track?.width ?? 0f;
+                float gripWidth = grip?.width ?? 0f;
+                bar.SetSize(width, bar.height);
+                // Relations may already resize the children when the scrollbar
+                // grows. Set explicit target widths from the ORIGINAL values.
+                if (track != null) {
+                    track.SetSize(Math.Max(10f, trackWidth + width - oldWidth), track.height);
+                    track.x = Math.Max(0f, (width - track.width) * .5f);
+                }
+                if (grip != null) {
+                    grip.SetSize(Math.Max(10f, gripWidth + width - oldWidth), grip.height);
+                    grip.x = Math.Max(0f, (width - grip.width) * .5f);
+                }
+            }
+            // A FairyGUI scrollbar's grip is frequently a button containing
+            // multiple images for normal/hover/pressed states. Tint every skin.
+            TintScrollbarSkin(bar.GetChild("grip"), SettingPink);
+        }
+
+        private static void TintScrollbarSkin(GObject? obj, Color tint) {
+            if (obj == null) return;
+            if (obj is GImage image) image.color = tint;
+            else if (obj is GLoader loader) loader.color = tint;
+            else if (obj is GGraph graph) graph.color = tint;
+            if (obj is GComponent component)
+                foreach (GObject child in component.GetChildren())
+                    TintScrollbarSkin(child, tint);
         }
 
         internal bool Alive => _viewport != null && !_viewport.isDisposed && _viewport.parent != null;
@@ -126,7 +167,10 @@ namespace AstralProbe.Features.Inventory {
                     touchable = true,
                     opaque = true // captures wheel and drag even over blank space
                 };
-                // ScrollPane reserves its own gutter for the native GScrollBar.
+                // Use the native interactive scrollbar, with SettingWindow's
+                // contrasting pink grip and a larger mouse-drag target.
+                StyleNativeScrollbar(created.scrollPane?.vtScrollBar);
+                // ScrollPane reserves its own gutter for the resized GScrollBar.
                 created.SetSize(layout.GuideWidth, layout.GuideHeight);
                 created.SetXY(layout.GuideLeft, layout.GuideTop);
                 ScrollPane? scroll = created.scrollPane;
