@@ -100,8 +100,9 @@ namespace AstralProbe.Features.Inventory {
             try {
                 ItemConfigure items = StaticConfigure.Item;
                 if (items == null || items.Infos == null || items.Infos.Count > 8192) return 0;
-                for (int i = 0, count = items.Infos.Count; i < count; i++) {
-                    ItemInfoConfigure info = items.Infos[i];
+                // Iteration also works with Protobuf assemblies whose repeated
+                // fields do not expose an indexer to this compilation target.
+                foreach (ItemInfoConfigure info in items.Infos) {
                     if (info == null || !VisibleMatches(info, name, icon)) continue;
                     if (approximate > 0 && approximate != info.Id) duplicateApproximate = true;
                     else approximate = info.Id;
