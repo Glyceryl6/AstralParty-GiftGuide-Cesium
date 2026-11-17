@@ -5,6 +5,7 @@ using CesiumLoader.SDK.Logging;
 using FairyGUI;
 using FairyGUI.Utils;
 using UnityEngine;
+using Core;
 using Tools;
 using UI;
 
@@ -489,8 +490,10 @@ namespace AstralProbe.Features.Inventory {
                     : usage.FavorExp + "/" + usage.FavorNeedExp;
                 AddHeroStatus(hero, status, favorTitle);
             }
-            if (group == 0)
-                AddHeroContractMaterials(hero, usage);
+            if (group == 0) {
+                if (usage.ContractSigned) AddGiftCompletionArt(hero, caption.y - 4f);
+                else AddHeroContractMaterials(hero, usage);
+            }
             return cell;
         }
 
@@ -523,6 +526,51 @@ namespace AstralProbe.Features.Inventory {
                 Math.Min(hero.height - height - 2f,
                     anchor.y + (anchor.height - height) * .5f)));
             hero.AddChild(text);
+        }
+
+        /// <summary>
+        /// Show the original Hero_Com_Gift completion artwork: image_CN and
+        /// image_EN are separate GImages, selected just as HeroPanel does.
+        /// Create only the small gift component as an untyped template; never
+        /// create/destroy a full HeroPanel or replace its extension mappings.
+        /// </summary>
+        private static void AddGiftCompletionArt(GComponent card, float bottom) {
+            GObject? template = null;
+            try {
+                template = UIPackage.CreateObjectFromURL(UIHero_Com_Gift.URL,
+                    typeof(GComponent));
+                if (!(template is GComponent source) || source.numChildren <= 17 ||
+                    !(source.GetChildAt(16) is GImage chinese) ||
+                    !(source.GetChildAt(17) is GImage english))
+                    throw new InvalidOperationException("原版礼物完成图标结构不匹配");
+                source.RemoveChild(chinese, false);
+                source.RemoveChild(english, false);
+                float nativeW = Math.Max(1f, Math.Max(chinese.width, english.width));
+                float nativeH = Math.Max(1f, Math.Max(chinese.height, english.height));
+                var art = new GComponent {
+                    name = "GiftGuide.ContractComplete", touchable = false, opaque = false
+                };
+                art.SetSize(nativeW, nativeH);
+                chinese.SetXY((nativeW - chinese.width) * .5f,
+                    (nativeH - chinese.height) * .5f);
+                english.SetXY((nativeW - english.width) * .5f,
+                    (nativeH - english.height) * .5f);
+                chinese.visible = GameSettings.languageType == LanguageType.SimplifiedChinese;
+                english.visible = !chinese.visible;
+                art.AddChild(chinese);
+                art.AddChild(english);
+                float scale = Math.Min(1f, Math.Min(
+                    (card.width - 18f) / nativeW,
+                    Math.Max(20f, bottom - card.height * .24f) / nativeH));
+                art.SetScale(scale, scale);
+                art.SetXY((card.width - nativeW * scale) * .5f,
+                    Math.Max(2f, bottom - nativeH * scale));
+                card.AddChild(art);
+            } catch (Exception ex) {
+                SdkLog.Warn("GiftGuide", "原版契约完成图标暂不可用：" + ex.Message);
+            } finally {
+                template?.Dispose();
+            }
         }
 
         private static void AddHeroContractMaterials(UIHero_Button_Hero hero,
@@ -684,7 +732,11 @@ namespace AstralProbe.Features.Inventory {
                 native.AddChild(marker);
             }
 
-            if (group == 0) AddContractMaterials(native, usage, cellWidth, cellHeight);
+            if (group == 0) {
+                if (usage.ContractSigned)
+                    AddGiftCompletionArt(native, native.com_ItemName.y - 4f);
+                else AddContractMaterials(native, usage, cellWidth, cellHeight);
+            }
             return native;
         }
 
