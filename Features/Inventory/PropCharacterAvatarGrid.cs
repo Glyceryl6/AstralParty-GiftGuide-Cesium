@@ -431,19 +431,25 @@ namespace AstralProbe.Features.Inventory {
                 autoSize = AutoSizeType.None, singleLine = true,
                 verticalAlign = VertAlignType.Middle
             };
-            if (isFavorExperience && _favorTitleStyle != null) {
-                // Keep the complete native FavorValue/title style at its
-                // original size, rather than replacing its fill or outline.
-                _favorTitleStyle.ApplyExact(text);
-            } else if (_heroPanelNameStyle != null) {
-                _heroPanelNameStyle.ApplyExact(text);
-            } else {
-                // The native hero label is a safe fallback when the sample
-                // UI package is still loading; never invent a black outline.
-                TextFormat format = text.textFormat;
-                format.CopyFrom(hero.txt_chrname.textFormat);
-                text.textFormat = format;
+            // FairyGUI TextFormat.CopyFrom intentionally DOES NOT copy
+            // outlines/shadows. Apply them explicitly, on this newly-created
+            // text field only; never mutate the native card's style instance.
+            TextFormat nativeStyle = hero.txt_chrname.textFormat;
+            TextFormat statusStyle = text.textFormat;
+            statusStyle.CopyFrom(nativeStyle);
+            statusStyle.outline = nativeStyle.outline;
+            statusStyle.outlineColor = nativeStyle.outlineColor;
+            statusStyle.shadowOffset = nativeStyle.shadowOffset;
+            statusStyle.shadowColor = nativeStyle.shadowColor;
+            if (isFavorExperience) {
+                statusStyle.size = 18;
+                statusStyle.gradientColor = null;
+                statusStyle.color = Color.white;
+                statusStyle.outline = Math.Max(1.2f, nativeStyle.outline);
+                if (nativeStyle.outline < .1f)
+                    statusStyle.outlineColor = new Color(.20f, .12f, .28f, 1f);
             }
+            text.textFormat = statusStyle;
             // None avoids the native Shrink behavior: 1/10 and 1234/5678
             // now use exactly the same font size. Keep the whole card width.
             text.autoSize = AutoSizeType.None;
