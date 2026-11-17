@@ -486,19 +486,22 @@ namespace AstralProbe.Features.Inventory {
             cell.SetSize(cellWidth, cellHeight);
             cell.AddChild(hero);
 
-            bool showCompleted = (group == 1 && usage.PotentialAwakened) ||
-                (group == 2 && usage.FavorDeepened);
-            if (showCompleted) {
-                // Preserve the native HeroPanel status icon and coordinates.
+            // Use the same native com_show levels as HeroPanel's two sorting
+            // modes, not only the completion states. Unowned portraits stay
+            // grayscale and never receive an experience overlay.
+            if (group == 2 && usage.Owned) {
                 hero.com_show.visible = true;
-                hero.com_show.Status.selectedIndex = group == 2 ? 1 : 3;
-                hero.com_show.releationPowerUp.selectedIndex = group == 2 ? 1 : 0;
-                hero.com_show.LV_txt.text = (group == 2
-                    ? usage.FavorLevel : usage.PotentialLevel).ToString();
-            } else if (group == 2 && usage.Owned) {
-                // Unowned heroes are grayscale and do not show favor experience.
-                AddHeroStatus(hero, usage.FavorExp + "/" + usage.FavorNeedExp,
-                    favorTitle);
+                hero.com_show.Status.selectedIndex = 1;
+                hero.com_show.releationPowerUp.selectedIndex = usage.FavorDeepened ? 1 : 0;
+                hero.com_show.LV_txt.text = usage.FavorLevel.ToString();
+                if (!usage.FavorDeepened)
+                    AddHeroStatus(hero, usage.FavorExp + "/" + usage.FavorNeedExp,
+                        favorTitle);
+            } else if (group == 1 && usage.Owned) {
+                hero.com_show.visible = true;
+                hero.com_show.Status.selectedIndex = usage.PotentialAwakened ? 3 : 2;
+                hero.com_show.releationPowerUp.selectedIndex = 0;
+                hero.com_show.LV_txt.text = usage.PotentialLevel.ToString();
             }
             if (group == 0) {
                 if (usage.ContractSigned) AddGiftCompletionArt(hero, caption.y - 4f);
@@ -538,8 +541,8 @@ namespace AstralProbe.Features.Inventory {
             float height = Math.Max(26f, anchor.height);
             text.SetSize(width, height);
             text.SetXY(4f, Math.Max(2f,
-                Math.Min(hero.height - height - 2f,
-                    anchor.y + (anchor.height - height) * .5f)));
+                Math.Min(hero.txt_chrname.y - height - 3f,
+                    anchor.y + anchor.height + 2f)));
             hero.AddChild(text);
         }
 
@@ -730,11 +733,10 @@ namespace AstralProbe.Features.Inventory {
             TextFormat priceFormat = price.textFormat;
             if (!string.IsNullOrEmpty(nativeFont)) priceFormat.font = nativeFont;
             price.textFormat = priceFormat;
-            bool showIcon = (group == 1 && usage.PotentialAwakened) ||
-                (group == 2 && usage.FavorDeepened);
+            bool showIcon = usage.Owned && (group == 1 || group == 2);
             string status = group == 2 && usage.Owned
                 ? usage.FavorExp + "/" + usage.FavorNeedExp : "";
-            native.com_Price.visible = group == 2 && usage.Owned && !showIcon;
+            native.com_Price.visible = group == 2 && usage.Owned && !usage.FavorDeepened;
             native.com_Price.isDiscount.selectedIndex = 0;
             if (native.com_Price.group_Discount != null)
                 native.com_Price.group_Discount.visible = false;
@@ -752,8 +754,9 @@ namespace AstralProbe.Features.Inventory {
             if (showIcon) {
                 UIHero_com_show marker = UIHero_com_show.CreateInstance();
                 marker.touchable = false;
-                marker.Status.selectedIndex = group == 2 ? 1 : 3;
-                marker.releationPowerUp.selectedIndex = group == 2 ? 1 : 0;
+                marker.Status.selectedIndex = group == 2 ? 1 :
+                    usage.PotentialAwakened ? 3 : 2;
+                marker.releationPowerUp.selectedIndex = group == 2 && usage.FavorDeepened ? 1 : 0;
                 marker.LV_txt.text = (group == 2 ? usage.FavorLevel : usage.PotentialLevel).ToString();
                 GComponent target = native.com_Price;
                 float scale = Math.Min(1f, Math.Min(
@@ -761,7 +764,9 @@ namespace AstralProbe.Features.Inventory {
                     (target.height - 2f) / Math.Max(1f, marker.height)));
                 marker.SetScale(scale, scale);
                 marker.SetXY(target.x + (target.width - marker.width * scale) * .5f,
-                    target.y + (target.height - marker.height * scale) * .5f);
+                    group == 2 && !usage.FavorDeepened
+                        ? Math.Max(2f, target.y - marker.height * scale - 2f)
+                        : target.y + (target.height - marker.height * scale) * .5f);
                 native.AddChild(marker);
             }
 
