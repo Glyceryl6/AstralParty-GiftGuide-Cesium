@@ -11,8 +11,8 @@ using UI;
 namespace AstralProbe.Features.Inventory {
     /// <summary>
     /// A scrollable lower extension of the original item window. Character
-    /// portraits use the store quality frame and TextureLoader; names and
-    /// material counts use the game's own store text components.
+    /// portraits prefer HeroPanel's native hero buttons. The previous shop
+    /// cards remain available as a fallback for UI package mismatches.
     /// </summary>
     internal sealed class PropCharacterAvatarGrid : IDisposable {
         private const float Padding = 9f;
@@ -20,6 +20,7 @@ namespace AstralProbe.Features.Inventory {
         // portrait/name and creates large looking gaps around each cell.
         private const int ColumnGap = 5;
         private const int RowGap = 5;
+        private const float HeroNameHeight = 29f;
         private const float HeadingHeight = 27f;
         private const float SectionGap = 10f;
         private const float ContractColumnGap = 2f;
@@ -143,6 +144,14 @@ namespace AstralProbe.Features.Inventory {
                     typeof(UIHero_Com_BreakThrough));
                 UIObjectFactory.SetPackageItemExtension(UIHero_com_show.URL,
                     typeof(UIHero_com_show));
+                UIObjectFactory.SetPackageItemExtension(UIHero_Com_HeroItem.URL,
+                    typeof(UIHero_Com_HeroItem));
+                UIObjectFactory.SetPackageItemExtension(UIHero_Button_Hero.URL,
+                    typeof(UIHero_Button_Hero));
+                UIObjectFactory.SetPackageItemExtension(UICom_SkinQuality.URL,
+                    typeof(UICom_SkinQuality));
+                UIObjectFactory.SetPackageItemExtension(UIButton_Collect.URL,
+                    typeof(UIButton_Collect));
 
                 stage = "扩展原版弹窗";
                 layout = PropPopupLayout.Expand(pane, background, footer, objects,
@@ -179,16 +188,41 @@ namespace AstralProbe.Features.Inventory {
                 scroll.mouseWheelEnabled = true;
                 scroll.touchEffect = true;
                 scroll.bouncebackEffect = false;
-                // Measure the original store component in the game's UI package.
-                // Never SetScale the authored item: its text and portrait are
-                // already laid out to fit these actual dimensions.
-                UIButton_GoodsItem_Store sample = UIButton_GoodsItem_Store.CreateInstance();
-                if (sample == null || sample.width <= 0f || sample.height <= 0f)
-                    throw new InvalidOperationException("商店角色卡片尚未就绪");
-                float cellWidth = sample.width;
-                float cellHeight = sample.height;
-                string nativeFont = sample.com_ItemName?.txt_Name?.textFormat.font ?? "";
-                sample.Dispose();
+                // Prefer the exact hero card from HeroPanel, including its own
+                // status icon and breakthrough quality frame. Keep the original
+                // shop-card renderer below as a safe resource-version fallback.
+                bool useHeroCards = false;
+                float cellWidth = 0f, cellHeight = 0f;
+                string nativeFont = "";
+                UIHero_Button_Hero? sampleHero = null;
+                try {
+                    sampleHero = UIHero_Button_Hero.CreateInstance();
+                    if (sampleHero != null && sampleHero.width > 0f && sampleHero.height > 0f &&
+                        sampleHero.com_Loader?.loader_Character != null &&
+                        sampleHero.com_show != null && sampleHero.txt_chrname != null) {
+                        useHeroCards = true;
+                        cellWidth = sampleHero.width;
+                        cellHeight = sampleHero.height + HeroNameHeight;
+                        nativeFont = sampleHero.txt_chrname.textFormat.font ?? "";
+                    }
+                } catch (Exception ex) {
+                    SdkLog.Warn("GiftGuide", "原版角色卡片尚未就绪，使用商店卡片：" + ex.Message);
+                } finally {
+                    try {
+                        if (sampleHero != null && !sampleHero.isDisposed) sampleHero.Dispose();
+                    } catch (Exception ex) {
+                        SdkLog.Warn("GiftGuide", "释放角色卡片样本失败：" + ex.Message);
+                    }
+                }
+                if (!useHeroCards) {
+                    UIButton_GoodsItem_Store sampleShop = UIButton_GoodsItem_Store.CreateInstance();
+                    if (sampleShop == null || sampleShop.width <= 0f || sampleShop.height <= 0f)
+                        throw new InvalidOperationException("原版角色卡片和商店卡片均不可用");
+                    cellWidth = sampleShop.width;
+                    cellHeight = sampleShop.height;
+                    nativeFont = sampleShop.com_ItemName?.txt_Name?.textFormat.font ?? "";
+                    sampleShop.Dispose();
+                }
                 scroll.scrollStep = Math.Max(28f, cellHeight * .38f);
 
                 float available = Math.Max(1f, Math.Min(created.width,
@@ -208,11 +242,14 @@ namespace AstralProbe.Features.Inventory {
                 var scrollLabels = new List<GTextField>();
                 float y = Padding;
                 y = AddSection(sections, usages, 0, "契约", name, description,
-                    inner, columns, cellWidth, cellHeight, nativeFont, y, scrollLabels);
+                    inner, columns, cellWidth, cellHeight, nativeFont, useHeroCards,
+                    y, scrollLabels);
                 y = AddSection(sections, usages, 1, "潜能", name, description,
-                    inner, columns, cellWidth, cellHeight, nativeFont, y, scrollLabels);
+                    inner, columns, cellWidth, cellHeight, nativeFont, useHeroCards,
+                    y, scrollLabels);
                 y = AddSection(sections, usages, 2, "偏好礼物", name, description,
-                    inner, columns, cellWidth, cellHeight, nativeFont, y, scrollLabels);
+                    inner, columns, cellWidth, cellHeight, nativeFont, useHeroCards,
+                    y, scrollLabels);
                 if (y <= Padding) {
                     sections.Dispose();
                     return false;
@@ -262,7 +299,7 @@ namespace AstralProbe.Features.Inventory {
         private static float AddSection(GComponent content, IReadOnlyList<CharacterMaterialUsage> all,
             int group, string heading, GTextField? nameStyle, GTextField? descriptionStyle,
             float width, int columns, float cellWidth, float cellHeight, string nativeFont,
-            float y, List<GTextField> scrollLabels) {
+            bool useHeroCards, float y, List<GTextField> scrollLabels) {
             var members = new List<CharacterMaterialUsage>();
             foreach (CharacterMaterialUsage? usage in all) {
                 if (usage == null) continue;
@@ -307,14 +344,189 @@ namespace AstralProbe.Features.Inventory {
             content.AddChild(list);
             foreach (CharacterMaterialUsage usage in members)
                 list.AddChild(BuildCharacterCard(usage, group, cellWidth, cellHeight,
-                    nativeFont, scrollLabels));
+                    nativeFont, useHeroCards, scrollLabels));
             list.EnsureBoundsCorrect();
             return y + listHeight;
         }
 
         private static GComponent BuildCharacterCard(CharacterMaterialUsage usage,
             int group, float cellWidth, float cellHeight, string nativeFont,
+            bool useHeroCards, List<GTextField> scrollLabels) {
+            return useHeroCards
+                ? BuildHeroCharacterCard(usage, group, cellWidth, cellHeight, nativeFont, scrollLabels)
+                : BuildLegacyStoreCard(usage, group, cellWidth, cellHeight, nativeFont, scrollLabels);
+        }
+
+        private static GComponent BuildHeroCharacterCard(CharacterMaterialUsage usage,
+            int group, float cellWidth, float cellHeight, string nativeFont,
             List<GTextField> scrollLabels) {
+            UIHero_Button_Hero hero = UIHero_Button_Hero.CreateInstance();
+            if (hero == null || hero.com_Loader?.loader_Character == null ||
+                hero.com_show == null || hero.txt_chrname == null)
+                throw new InvalidOperationException("HeroPanel 角色卡片结构与当前游戏版本不匹配");
+            hero.name = "GiftGuide.Hero." + usage.HeroId;
+            hero.HeroId = usage.HeroId;
+            hero.touchable = false;
+            hero.opaque = false;
+            hero.grayed = false;
+            hero.breakthrough.selectedIndex = usage.ContractSigned ? 1 : 0;
+            hero.Collaborate.selectedIndex = usage.IsLinkage ? 1 : 0;
+            hero.com_Loader.loader_Character.url = !string.IsNullOrEmpty(usage.HeroPortrait)
+                ? usage.HeroPortrait : usage.Portrait;
+            hero.com_Loader.graph_Effect.visible = false;
+            if (hero.com_Loader.com_Qulity is UICom_SkinQuality quality)
+                quality.appearanceType.selectedIndex = usage.Quality;
+            hero.com_Loader.Ultimate.selectedIndex = usage.IsUltimate ? 1 : 0;
+            hero.txt_Trial.visible = false;
+            hero.btn_Collect.visible = false;
+            // Put the name beneath the hero button rather than at the old
+            // store-card title position. The game-authored portrait is unscaled.
+            hero.txt_chrname.text = usage.Name;
+            hero.txt_chrname.visible = false;
+            hero.com_show.visible = false;
+            hero.com_show.releationPowerUp.selectedIndex = 0;
+            hero.com_show.Status.selectedIndex = 0;
+
+            var cell = new GComponent { name = "GiftGuide.HeroCell", touchable = false,
+                opaque = false, tooltips = usage.Name };
+            cell.SetSize(cellWidth, cellHeight);
+            cell.AddChild(hero);
+
+            var caption = new GTextField {
+                name = "GiftGuide.HeroName", text = usage.Name,
+                touchable = false, autoSize = AutoSizeType.None,
+                align = AlignType.Center, verticalAlign = VertAlignType.Middle,
+                tooltips = usage.Name
+            };
+            TextFormat nameFormat = caption.textFormat;
+            CopyStyle(nameFormat, hero.txt_chrname, null, 16, 20);
+            if (!string.IsNullOrEmpty(nativeFont)) nameFormat.font = nativeFont;
+            caption.textFormat = nameFormat;
+            caption.SetSize(cellWidth, HeroNameHeight - 2f);
+            caption.SetXY(0f, hero.height + 1f);
+            cell.AddChild(caption);
+            scrollLabels.Add(caption);
+
+            bool showCompleted = group == 1 && usage.PotentialAwakened ||
+                group == 2 && usage.FavorDeepened;
+            if (showCompleted) {
+                // This is the exact HeroPanel status object at its authored
+                // coordinates, not a new icon floating over the card.
+                hero.com_show.visible = true;
+                hero.com_show.Status.selectedIndex = group == 2 ? 1 : 3;
+                hero.com_show.releationPowerUp.selectedIndex = group == 2 ? 1 : 0;
+                hero.com_show.LV_txt.text = (group == 2
+                    ? usage.FavorLevel : usage.PotentialLevel).ToString();
+            } else if (group == 1 || group == 2) {
+                string status = group == 1
+                    ? (usage.PotentialMissing > 0 ? "缺少 " + usage.PotentialMissing : "材料已齐")
+                    : usage.FavorExp + "/" + usage.FavorNeedExp;
+                AddHeroStatus(hero, status, nativeFont);
+            }
+            if (group == 0)
+                AddHeroContractMaterials(hero, usage, nativeFont);
+            return cell;
+        }
+
+        private static void AddHeroStatus(UIHero_Button_Hero hero, string status,
+            string nativeFont) {
+            UIHero_com_show anchor = hero.com_show;
+            float width = Math.Min(hero.width - 6f, Math.Max(84f, anchor.width + 30f));
+            var text = new GTextField {
+                name = "GiftGuide.HeroStatus", text = status, touchable = false,
+                autoSize = AutoSizeType.None, align = AlignType.Center,
+                verticalAlign = VertAlignType.Middle
+            };
+            TextFormat format = text.textFormat;
+            CopyStyle(format, hero.txt_chrname, anchor.LV_txt, 17, 20);
+            if (!string.IsNullOrEmpty(nativeFont)) format.font = nativeFont;
+            text.textFormat = format;
+            text.SetSize(width, Math.Max(24f, anchor.height));
+            text.SetXY(Math.Max(3f, Math.Min(hero.width - width - 3f,
+                anchor.x + (anchor.width - width) * .5f)), anchor.y);
+            hero.AddChild(text);
+        }
+
+        private static void AddHeroContractMaterials(UIHero_Button_Hero hero,
+            CharacterMaterialUsage usage, string nativeFont) {
+            int count = usage.ContractRequirements.Count;
+            if (count == 0) return;
+
+            // Contract materials share the original hero status position, but
+            // each item has its own unscaled 16+ px count instead of shrinking
+            // the native count together with the item art.
+            GComponent anchor = hero.com_show;
+            int columns = count <= 3 ? count : count == 4 ? 2 : 3;
+            int rows = (count + columns - 1) / columns;
+            float width = Math.Max(1f, hero.width - 8f);
+            // Keep single-row gifts large, but leave the portrait visible.
+            float desiredHeight = rows * 78f + (rows - 1) * 3f;
+            float height = Math.Min(Math.Max(1f, hero.height - 8f), desiredHeight);
+            float top = Math.Max(4f, Math.Min(hero.height - height - 4f,
+                anchor.y + anchor.height * .5f - height * .78f));
+            var materials = new GList {
+                name = "GiftGuide.list_BreakThrough", touchable = false, opaque = false,
+                layout = ListLayoutType.FlowHorizontal, columnCount = columns,
+                columnGap = 3, lineGap = 3, autoResizeItem = false
+            };
+            materials.SetSize(width, height);
+            materials.SetXY(4f, top);
+            hero.AddChild(materials);
+
+            float slotWidth = (width - (columns - 1) * 3f) / columns;
+            float slotHeight = (height - (rows - 1) * 3f) / rows;
+            foreach (ContractRequirement need in usage.ContractRequirements) {
+                UIHero_Com_BreakThrough item = UIHero_Com_BreakThrough.CreateInstance();
+                if (item == null || !(item.com_Item is UICom_Item icon) || item.txt_Num == null)
+                    throw new InvalidOperationException("原版契约材料组件尚未准备好");
+                icon.RefreshItem(need.ItemId, showNum: false);
+                icon.touchable = false;
+                item.touchable = false;
+                item.txt_Num.SetVar("color", need.Owned >= need.Required ? "00FF00" : "FF0000")
+                    .SetVar("curNum", need.Required.ToString())
+                    .SetVar("target", need.Owned.ToString()).FlushVars();
+                // Keep the native renderer and icon frame; replace only its
+                // downsized number field with legible game-font text.
+                item.txt_Num.visible = false;
+                var slot = new GComponent { touchable = false, opaque = false };
+                slot.SetSize(slotWidth, slotHeight);
+                float labelHeight = Math.Min(25f, Math.Max(18f, slotHeight * .30f));
+                float iconWidth = Math.Max(1f, icon.x + icon.width);
+                float iconHeight = Math.Max(1f, icon.y + icon.height);
+                float scale = Math.Min(1.2f, Math.Min(
+                    (slotWidth - 3f) / iconWidth,
+                    (slotHeight - labelHeight - 3f) / iconHeight));
+                scale = Math.Max(.01f, scale);
+                item.SetScale(scale, scale);
+                item.SetXY((slotWidth - iconWidth * scale) * .5f, 0f);
+                slot.AddChild(item);
+                var number = new GTextField {
+                    name = "GiftGuide.MaterialCount", touchable = false,
+                    autoSize = AutoSizeType.None,
+                    align = AlignType.Center, verticalAlign = VertAlignType.Middle,
+                    text = need.Required + "/" + need.Owned
+                };
+                TextFormat countFormat = number.textFormat;
+                CopyStyle(countFormat, item.txt_Num, hero.txt_chrname, 16, 19);
+                countFormat.size = Math.Max(18, countFormat.size);
+                countFormat.bold = true;
+                if (!string.IsNullOrEmpty(nativeFont)) countFormat.font = nativeFont;
+                number.textFormat = countFormat;
+                number.color = need.Owned >= need.Required
+                    ? new Color(.10f, .78f, .24f, 1f)
+                    : new Color(.98f, .23f, .29f, 1f);
+                number.SetSize(slotWidth, labelHeight);
+                number.SetXY(0f, slotHeight - labelHeight);
+                slot.AddChild(number);
+                materials.AddChild(slot);
+            }
+            materials.EnsureBoundsCorrect();
+        }
+
+        private static GComponent BuildLegacyStoreCard(CharacterMaterialUsage usage,
+            int group, float cellWidth, float cellHeight, string nativeFont,
+            List<GTextField> scrollLabels) {
+            // Fallback retains the previous UICom_GoodsQuality_Store renderer.
             // Retain the game's entire original shop card, including portrait
             // frame, size, title and price area.
             UIButton_GoodsItem_Store native = UIButton_GoodsItem_Store.CreateInstance();

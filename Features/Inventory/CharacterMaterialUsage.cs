@@ -23,7 +23,10 @@ namespace AstralProbe.Features.Inventory {
         internal string Title = "";
         internal bool ContractSigned;
         internal string Portrait = "";
+        internal string HeroPortrait = "";
         internal int Quality;
+        internal bool IsLinkage;
+        internal bool IsUltimate;
         internal bool Owned;
         internal bool GiftPreferred;
         internal int FavorLevel;
@@ -84,7 +87,10 @@ namespace AstralProbe.Features.Inventory {
                     Portrait = painting == null ? string.Empty :
                         (!string.IsNullOrWhiteSpace(painting.ProfilePhoto)
                             ? painting.ProfilePhoto : painting.GetCharacterPhoto()),
+                    HeroPortrait = painting?.GetCharacterPhoto() ?? string.Empty,
                     Quality = painting == null ? 0 : (int)painting.SkinAppearanceType,
+                    IsLinkage = info.IsLinkage,
+                    IsUltimate = painting?.SkinAppearanceType == SkinAppearanceType.Ultimate,
                     Owned = card?.IsHas ?? false,
                     FavorLevel = card?.LV ?? 0,
                     FavorExp = Math.Max(0, card?.Exp ?? 0),
