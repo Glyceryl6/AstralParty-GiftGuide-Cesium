@@ -18,8 +18,8 @@ namespace AstralProbe.Features.Inventory {
         private const float Inner = 24f;
         private const float Gap = 5f;
         // Two centimetres at the project's approximate 38 logical px/cm.
-        // Previous versions' detail offsets were canceled by a floor based
-        // on the SAME native footer bottom, leaving the viewport unchanged.
+        // Previous versions still clamped against off-page native lists; the
+        // viewport itself must move instead of just increasing frame height.
         private const float DetailTopRaise = 76f;
         private const float PreferredGiftExtraRaise = 38f;
         private const float ExtraHeight = 445f;
@@ -271,20 +271,17 @@ namespace AstralProbe.Features.Inventory {
             float originalTop = Math.Max(contentBottom, nativeBottom) - lift + Gap;
             _top = originalTop;
             if (!afterFooter) {
-                // Detail window has no requirement to stay BELOW its footer;
-                // the previous Math.Max(footerBottom, originalTop - reach)
-                // always snapped back to footerBottom, so the rise did nothing.
-                // Protect actual item text, preview and active contents instead.
-                float visibleBottom = y + 38f;
-                visibleBottom = VisibleTextBottom(description, pane, visibleBottom, originalBottom);
-                visibleBottom = ContentBottom(preview, pane, visibleBottom, originalBottom);
-                visibleBottom = ContentBottom(name, pane, visibleBottom, originalBottom);
-                if (content != null) foreach (GObject obj in content)
-                    visibleBottom = ContentBottom(obj, pane, visibleBottom, originalBottom);
-                float protectedTop = visibleBottom - lift + Gap;
-                float wantedTop = originalTop - DetailTopRaise -
+                // Detail's old "visible content bottom" floor was often the
+                // same as originalTop (controllers may keep inactive lists
+                // visible), canceling every requested upward adjustment.
+                // Move the actual viewport top independently of that floor;
+                // retain only a small absolute reserve for the native header.
+                float requestedRaise = DetailTopRaise +
                     (hasPreferredGift ? PreferredGiftExtraRaise : 0f);
-                _top = Math.Max(protectedTop, wantedTop);
+                float headerReserve = Math.Max(60f, Math.Min(98f, h * .28f));
+                float earliestTop = y - lift + headerReserve;
+                _top = Math.Min(originalTop,
+                    Math.Max(earliestTop, originalTop - requestedRaise));
             }
             float maxBottom = y - lift + h + extraHeight - Inner;
             _height = Math.Max(0f, maxBottom - _top);
