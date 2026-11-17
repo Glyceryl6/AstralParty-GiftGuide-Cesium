@@ -21,6 +21,8 @@ namespace AstralProbe.Features.Inventory {
         private const int ColumnGap = 5;
         private const int RowGap = 5;
         private const float HeroNameHeight = 29f;
+        private const int FavorExperienceFontSize = 18;
+        private const int ContractCountFontSize = 14;
         private const float HeadingHeight = 36f;
         private const float SectionGap = 12f;
         private const float ContractColumnGap = 2f;
@@ -38,25 +40,33 @@ namespace AstralProbe.Features.Inventory {
             private readonly float _stroke;
             private readonly Color _strokeColor;
             private readonly Vector2 _shadowOffset;
-            private readonly Color _color;
 
             internal NativeTextStyle(GTextField source) {
                 _format.CopyFrom(source.textFormat);
                 _stroke = source.stroke;
                 _strokeColor = source.strokeColor;
                 _shadowOffset = source.shadowOffset;
-                _color = source.color;
             }
 
-            internal void Apply(GTextField target, int minSize, int maxSize) {
+            internal void ApplyReadable(GTextField target, int fontSize) {
+                // The original HeroPanel title/progress-bar text may be dark.
+                // Copy its glyph font and outline, but NEVER its black fill or
+                // gradient onto a portrait: that made both labels unreadable.
                 TextFormat format = target.textFormat;
                 format.CopyFrom(_format);
-                format.size = Math.Max(minSize, Math.Min(maxSize, format.size));
+                format.size = fontSize;
+                format.color = Color.white;
+                format.gradientColor = null;
+                format.align = AlignType.Center;
                 target.textFormat = format;
-                target.stroke = _stroke;
-                target.strokeColor = _strokeColor;
-                target.shadowOffset = _shadowOffset;
-                target.color = _color;
+                // Thick source outlines swallowed the smaller text entirely.
+                target.stroke = _stroke > 0f ? Math.Min(_stroke, 1.3f) : 1f;
+                target.strokeColor = _strokeColor.a > .01f
+                    ? _strokeColor : new Color(.12f, .1f, .18f, 1f);
+                target.shadowOffset = _shadowOffset.magnitude <= 2f
+                    ? _shadowOffset : Vector2.zero;
+                target.color = Color.white;
+                target.align = AlignType.Center;
             }
         }
 
@@ -461,21 +471,36 @@ namespace AstralProbe.Features.Inventory {
             caption.touchable = false;
             caption.tooltips = usage.Name;
             caption.singleLine = true;
-            caption.autoSize = AutoSizeType.Shrink;
-            caption.align = AlignType.Center;
+            caption.autoSize = AutoSizeType.Shrink; // names may be longer than a portrait
             caption.verticalAlign = VertAlignType.Middle;
             if (_heroPanelNameStyle != null)
-                _heroPanelNameStyle.Apply(caption, 16, 20);
+                _heroPanelNameStyle.ApplyReadable(caption, 18);
             else {
                 TextFormat nameFormat = caption.textFormat;
-                CopyStyle(nameFormat, caption, null, 16, 20);
+                CopyStyle(nameFormat, caption, null, 18, 18);
                 if (!string.IsNullOrEmpty(UIConfig.defaultFont))
                     nameFormat.font = UIConfig.defaultFont;
+                nameFormat.color = Color.white;
+                nameFormat.gradientColor = null;
+                nameFormat.align = AlignType.Center;
                 caption.textFormat = nameFormat;
+                caption.color = Color.white;
+                caption.stroke = caption.stroke > 0f ? Math.Min(caption.stroke, 1.3f) : 1f;
+                caption.strokeColor = new Color(.12f, .1f, .18f, 1f);
             }
+            // FairyGUI's native name may have an anchored pivot, and the hero
+            // image is not necessarily centered on the button's full width.
+            // Reset that pivot and center the caption over the actual portrait.
+            caption.SetPivot(0f, 0f, false);
             float nameHeight = Math.Min(HeroNameHeight, Math.Max(22f, hero.height * .24f));
-            caption.SetSize(Math.Max(1f, hero.width - 8f), nameHeight);
-            caption.SetXY(4f, Math.Max(2f, hero.height - nameHeight - 4f));
+            float nameWidth = Math.Max(1f, Math.Min(hero.width - 4f,
+                Math.Max(80f, hero.com_Loader.width + 8f)));
+            float portraitCenter = hero.com_Loader.x + hero.com_Loader.width * .5f;
+            float nameX = Math.Max(2f, Math.Min(hero.width - nameWidth - 2f,
+                portraitCenter - nameWidth * .5f));
+            caption.SetSize(nameWidth, nameHeight);
+            caption.SetXY(nameX, Math.Max(2f, hero.height - nameHeight - 4f), true);
+            caption.align = AlignType.Center;
 
             hero.com_show.visible = false;
             hero.com_show.releationPowerUp.selectedIndex = 0;
@@ -510,26 +535,37 @@ namespace AstralProbe.Features.Inventory {
         private static void AddHeroStatus(UIHero_Button_Hero hero, string status,
             string nativeFont, bool isFavorExperience) {
             UIHero_com_show anchor = hero.com_show;
-            float width = Math.Min(hero.width - 8f, Math.Max(84f, anchor.width + 30f));
+            float width = Math.Max(1f, hero.width - 6f);
             var text = new GTextField {
                 name = "GiftGuide.HeroStatus", text = status, touchable = false,
-                autoSize = AutoSizeType.Shrink, singleLine = true,
-                align = AlignType.Center, verticalAlign = VertAlignType.Middle
+                autoSize = AutoSizeType.None, singleLine = true,
+                verticalAlign = VertAlignType.Middle
             };
+            int fontSize = isFavorExperience ? FavorExperienceFontSize : 18;
             if (isFavorExperience && _favorTitleStyle != null) {
-                // HeroPanel's UIHero_bar_FavorValue/title has its own outline.
-                _favorTitleStyle.Apply(text, 17, 21);
+                // Sample the original favor-bar outline, not its dark text fill.
+                _favorTitleStyle.ApplyReadable(text, fontSize);
             } else {
                 TextFormat format = text.textFormat;
-                CopyStyle(format, hero.txt_chrname, anchor.LV_txt, 17, 20);
+                CopyStyle(format, hero.txt_chrname, anchor.LV_txt, fontSize, fontSize);
                 if (!string.IsNullOrEmpty(nativeFont)) format.font = nativeFont;
+                format.color = Color.white;
+                format.gradientColor = null;
+                format.align = AlignType.Center;
                 text.textFormat = format;
+                text.color = Color.white;
+                text.stroke = text.stroke > 0f ? Math.Min(text.stroke, 1.3f) : 1f;
+                text.strokeColor = new Color(.12f, .1f, .18f, 1f);
             }
+            // None avoids the native Shrink behavior: 1/10 and 1234/5678
+            // now use exactly the same font size. Keep the whole card width.
+            text.autoSize = AutoSizeType.None;
+            text.SetPivot(0f, 0f, false);
+            text.align = AlignType.Center;
             float height = Math.Max(24f, anchor.height);
             text.SetSize(width, height);
-            // Center on the card, not the status icon's offset coordinates.
             text.SetXY((hero.width - width) * .5f, Math.Max(2f,
-                Math.Min(hero.height - height - 2f, anchor.y + (anchor.height - height) * .5f)));
+                Math.Min(hero.height - height - 2f, anchor.y + (anchor.height - height) * .5f)), true);
             hero.AddChild(text);
         }
 
