@@ -42,6 +42,7 @@ namespace AstralProbe.Features.Inventory {
         private PropPopupLayout? _layout;
         private int _item;
         private DateTime _retry;
+        private static bool _loggedDetailViewport;
 
         private sealed class GuideViewport : GComponent {
             internal GuideViewport(string verticalBarUrl) {
@@ -248,7 +249,17 @@ namespace AstralProbe.Features.Inventory {
                 created.EnsureBoundsCorrect();
                 stage = "添加角色列表到原版窗口";
                 pane.AddChild(created);
+                // Apply the layout after parenting as well, so a native
+                // container relation cannot silently restore the old Y.
+                created.SetXY(layout.GuideLeft, layout.GuideTop, true);
                 created.EnsureBoundsCorrect();
+                if (!afterFooter && !_loggedDetailViewport) {
+                    _loggedDetailViewport = true;
+                    SdkLog.Warn("GiftGuide", "物品详情角色列表定位：Y=" +
+                        created.y.ToString("F1") + "，高度=" +
+                        created.height.ToString("F1") + "，弹窗顶部=" +
+                        background.y.ToString("F1") + "。如仍有空白，请保留该条日志。");
+                }
                 scroll.UpdateScrollBarVisible();
                 foreach (GTextField label in scrollLabels) {
                     if (label == null || label.isDisposed || !label.onStage) continue;

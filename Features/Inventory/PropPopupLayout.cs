@@ -17,10 +17,12 @@ namespace AstralProbe.Features.Inventory {
         private const float Edge = 12f;
         private const float Inner = 24f;
         private const float Gap = 5f;
-        // Two centimetres at the project's approximate 38 logical px/cm.
-        // Previous versions still clamped against off-page native lists; the
-        // viewport itself must move instead of just increasing frame height.
+        // Preserve the v0.2.21 calculated position as an explicit baseline,
+        // then request another 76 logical pixels upward. Earlier changes often
+        // merely increased the requested raise while the header floor still
+        // clamped the viewport to the same unchanging Y coordinate.
         private const float DetailTopRaise = 76f;
+        private const float DetailFurtherRaise = 76f;
         private const float PreferredGiftExtraRaise = 38f;
         private const float ExtraHeight = 445f;
         private const float PreferredLift = 76f;
@@ -271,17 +273,21 @@ namespace AstralProbe.Features.Inventory {
             float originalTop = Math.Max(contentBottom, nativeBottom) - lift + Gap;
             _top = originalTop;
             if (!afterFooter) {
-                // Detail's old "visible content bottom" floor was often the
-                // same as originalTop (controllers may keep inactive lists
-                // visible), canceling every requested upward adjustment.
-                // Move the actual viewport top independently of that floor;
-                // retain only a small absolute reserve for the native header.
+                // Compare against the exact old placement. Do not reapply the
+                // original 60-98 px header clamp to the increased area: that
+                // clamp is why several previous raises had no visible effect.
                 float requestedRaise = DetailTopRaise +
                     (hasPreferredGift ? PreferredGiftExtraRaise : 0f);
-                float headerReserve = Math.Max(60f, Math.Min(98f, h * .28f));
-                float earliestTop = y - lift + headerReserve;
+                float oldHeaderReserve = Math.Max(60f, Math.Min(98f, h * .28f));
+                float oldEarliestTop = y - lift + oldHeaderReserve;
+                float oldTop = Math.Min(originalTop,
+                    Math.Max(oldEarliestTop, originalTop - requestedRaise));
+                // Keep the scroll region inside the expanded frame. A small
+                // inset avoids the extreme top edge without masking the blank
+                // space that the player wants the list to fill.
+                float frameTop = y - lift;
                 _top = Math.Min(originalTop,
-                    Math.Max(earliestTop, originalTop - requestedRaise));
+                    Math.Max(frameTop + 12f, oldTop - DetailFurtherRaise));
             }
             float maxBottom = y - lift + h + extraHeight - Inner;
             _height = Math.Max(0f, maxBottom - _top);
