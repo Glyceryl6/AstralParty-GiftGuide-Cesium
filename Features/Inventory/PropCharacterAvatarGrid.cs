@@ -28,62 +28,13 @@ namespace AstralProbe.Features.Inventory {
         private const float ContractRowGap = 2f;
         // Exact pink used by SettingWindow for its active controls.
         private static readonly Color SettingPink = new Color(1f, .1686f, .5686f, 1f);
-        private static NativeTextStyle? _heroPanelNameStyle;
-        private static NativeTextStyle? _favorTitleStyle;
-        private static bool _sampledHeroPanelStyles;
-
-        // Use the game's complete text style (font, fill/gradient, outline,
-        // shadow and original size) without subsequent color/stroke overrides.
-        // V0.2.20's extra property setters changed the authored appearance.
-        private sealed class NativeTextStyle {
-            private readonly TextFormat _format = new TextFormat();
-
-            internal NativeTextStyle(GTextField source) {
-                _format.CopyFrom(source.textFormat);
-            }
-
-            internal void ApplyExact(GTextField target) {
-                TextFormat format = target.textFormat;
-                format.CopyFrom(_format);
-                target.textFormat = format;
-            }
-        }
-
-        private static void EnsureHeroPanelTextStyles() {
-            if (_sampledHeroPanelStyles) return;
-            _sampledHeroPanelStyles = true;
-            UIHeroPanel? sample = null;
-            try {
-                // Create once and dispose immediately; retain only style values.
-                sample = UIHeroPanel.CreateInstance();
-                if (sample?.txt_Name != null)
-                    _heroPanelNameStyle = new NativeTextStyle(sample.txt_Name);
-                // FairyGUI progress bars use a child named "title" to render
-                // their label (the `title` value itself is a string).
-                if (sample?.slider_Favor?.GetChild("title") is GTextField title)
-                    _favorTitleStyle = new NativeTextStyle(title);
-            } catch (Exception ex) {
-                SdkLog.Warn("GiftGuide", "读取原版英雄面板文字样式失败，保留现有样式：" + ex.Message);
-            } finally {
-                if (sample != null && !sample.isDisposed) {
-                    try { sample.Dispose(); }
-                    catch (Exception ex) {
-                        SdkLog.Warn("GiftGuide", "释放英雄面板样本失败：" + ex.Message);
-                    }
-                }
-            }
-            if (_favorTitleStyle == null) {
-                UIHero_bar_FavorValue? bar = null;
-                try {
-                    bar = UIHero_bar_FavorValue.CreateInstance();
-                    if (bar?.GetChild("title") is GTextField title)
-                        _favorTitleStyle = new NativeTextStyle(title);
-                } catch (Exception ex) {
-                    SdkLog.Warn("GiftGuide", "读取原版友情进度文字样式失败：" + ex.Message);
-                } finally {
-                    if (bar != null && !bar.isDisposed) bar.Dispose();
-                }
-            }
+        // Do not instantiate and dispose an entire HeroPanel just to read a
+        // font: the native panel contains external loaders/effect resources.
+        // Likewise, don't replace extension creators already owned by the game.
+        private static void EnsureNativeExtension(string url, Type type) {
+            PackageItem? asset = UIPackage.GetItemByURL(url);
+            if (asset != null && asset.extensionCreator == null)
+                UIObjectFactory.SetPackageItemExtension(url, type);
         }
 
         private GuideViewport? _viewport;
@@ -184,32 +135,19 @@ namespace AstralProbe.Features.Inventory {
             PropPopupLayout? layout = null;
             string stage = "注册商店组件";
             try {
-                UIObjectFactory.SetPackageItemExtension(UICom_GoodsQuality_Store.URL,
-                    typeof(UICom_GoodsQuality_Store));
-                UIObjectFactory.SetPackageItemExtension(UICom_GoodsItemName.URL,
-                    typeof(UICom_GoodsItemName));
-                UIObjectFactory.SetPackageItemExtension(UICom_Label.URL,
-                    typeof(UICom_Label));
-                UIObjectFactory.SetPackageItemExtension(UICom_ItemType.URL,
-                    typeof(UICom_ItemType));
-                UIObjectFactory.SetPackageItemExtension(UICom_Price.URL,
-                    typeof(UICom_Price));
-                UIObjectFactory.SetPackageItemExtension(UIButton_GoodsItem_Store.URL,
-                    typeof(UIButton_GoodsItem_Store));
-                UIObjectFactory.SetPackageItemExtension(UICom_Item.URL,
-                    typeof(UICom_Item));
-                UIObjectFactory.SetPackageItemExtension(UIHero_Com_BreakThrough.URL,
-                    typeof(UIHero_Com_BreakThrough));
-                UIObjectFactory.SetPackageItemExtension(UIHero_com_show.URL,
-                    typeof(UIHero_com_show));
-                UIObjectFactory.SetPackageItemExtension(UIHero_Com_HeroItem.URL,
-                    typeof(UIHero_Com_HeroItem));
-                UIObjectFactory.SetPackageItemExtension(UIHero_Button_Hero.URL,
-                    typeof(UIHero_Button_Hero));
-                UIObjectFactory.SetPackageItemExtension(UICom_SkinQuality.URL,
-                    typeof(UICom_SkinQuality));
-                UIObjectFactory.SetPackageItemExtension(UIButton_Collect.URL,
-                    typeof(UIButton_Collect));
+                EnsureNativeExtension(UICom_GoodsQuality_Store.URL, typeof(UICom_GoodsQuality_Store));
+                EnsureNativeExtension(UICom_GoodsItemName.URL, typeof(UICom_GoodsItemName));
+                EnsureNativeExtension(UICom_Label.URL, typeof(UICom_Label));
+                EnsureNativeExtension(UICom_ItemType.URL, typeof(UICom_ItemType));
+                EnsureNativeExtension(UICom_Price.URL, typeof(UICom_Price));
+                EnsureNativeExtension(UIButton_GoodsItem_Store.URL, typeof(UIButton_GoodsItem_Store));
+                EnsureNativeExtension(UICom_Item.URL, typeof(UICom_Item));
+                EnsureNativeExtension(UIHero_Com_BreakThrough.URL, typeof(UIHero_Com_BreakThrough));
+                EnsureNativeExtension(UIHero_com_show.URL, typeof(UIHero_com_show));
+                EnsureNativeExtension(UIHero_Com_HeroItem.URL, typeof(UIHero_Com_HeroItem));
+                EnsureNativeExtension(UIHero_Button_Hero.URL, typeof(UIHero_Button_Hero));
+                EnsureNativeExtension(UICom_SkinQuality.URL, typeof(UICom_SkinQuality));
+                EnsureNativeExtension(UIButton_Collect.URL, typeof(UIButton_Collect));
 
                 stage = "扩展原版弹窗";
                 bool hasPreferredGift = false;
@@ -256,37 +194,23 @@ namespace AstralProbe.Features.Inventory {
                 bool useHeroCards = false;
                 float cellWidth = 0f, cellHeight = 0f;
                 string nativeFont = "";
-                UIHero_Button_Hero? sampleHero = null;
-                try {
-                    sampleHero = UIHero_Button_Hero.CreateInstance();
-                    if (sampleHero != null && sampleHero.width > 0f && sampleHero.height > 0f &&
-                        sampleHero.com_Loader?.loader_Character != null &&
-                        sampleHero.com_show != null && sampleHero.txt_chrname != null) {
-                        useHeroCards = true;
-                        cellWidth = sampleHero.width;
-                        // The native name now stays INSIDE the hero button.
-                        cellHeight = sampleHero.height;
-                        nativeFont = sampleHero.txt_chrname.textFormat.font ?? "";
-                    }
-                } catch (Exception ex) {
-                    SdkLog.Warn("GiftGuide", "原版角色卡片尚未就绪，使用商店卡片：" + ex.Message);
-                } finally {
-                    try {
-                        if (sampleHero != null && !sampleHero.isDisposed) sampleHero.Dispose();
-                    } catch (Exception ex) {
-                        SdkLog.Warn("GiftGuide", "释放角色卡片样本失败：" + ex.Message);
-                    }
+                // Read authored dimensions from the package metadata instead
+                // of creating a live hero card and immediately disposing it.
+                // The native card's Dispose() stops its effect graph, and a
+                // temporary full HeroPanel can also touch shared UI resources.
+                PackageItem? heroAsset = UIPackage.GetItemByURL(UIHero_Button_Hero.URL);
+                if (heroAsset != null && heroAsset.width > 0 && heroAsset.height > 0) {
+                    useHeroCards = true;
+                    cellWidth = heroAsset.width;
+                    cellHeight = heroAsset.height;
                 }
                 if (!useHeroCards) {
-                    UIButton_GoodsItem_Store sampleShop = UIButton_GoodsItem_Store.CreateInstance();
-                    if (sampleShop == null || sampleShop.width <= 0f || sampleShop.height <= 0f)
-                        throw new InvalidOperationException("原版角色卡片和商店卡片均不可用");
-                    cellWidth = sampleShop.width;
-                    cellHeight = sampleShop.height;
-                    nativeFont = sampleShop.com_ItemName?.txt_Name?.textFormat.font ?? "";
-                    sampleShop.Dispose();
+                    PackageItem? shopAsset = UIPackage.GetItemByURL(UIButton_GoodsItem_Store.URL);
+                    if (shopAsset == null || shopAsset.width <= 0 || shopAsset.height <= 0)
+                        throw new InvalidOperationException("原版角色卡片和商店卡片资源均不可用");
+                    cellWidth = shopAsset.width;
+                    cellHeight = shopAsset.height;
                 }
-                if (useHeroCards) EnsureHeroPanelTextStyles();
                 scroll.scrollStep = Math.Max(28f, cellHeight * .38f);
 
                 float available = Math.Max(1f, Math.Min(created.width,
@@ -431,7 +355,6 @@ namespace AstralProbe.Features.Inventory {
             hero.HeroId = usage.HeroId;
             hero.touchable = false;
             hero.opaque = false;
-            hero.grayed = false;
             hero.breakthrough.selectedIndex = usage.ContractSigned ? 1 : 0;
             hero.Collaborate.selectedIndex = usage.IsLinkage ? 1 : 0;
             hero.com_Loader.loader_Character.url = !string.IsNullOrEmpty(usage.HeroPortrait)
@@ -442,25 +365,31 @@ namespace AstralProbe.Features.Inventory {
             hero.com_Loader.Ultimate.selectedIndex = usage.IsUltimate ? 1 : 0;
             hero.txt_Trial.visible = false;
             hero.btn_Collect.visible = false;
-            // The authored name field belongs to the actual hero button.
-            // Reuse it instead of creating a caption beyond the card's edge.
+            // Keep the actual Hero_Button_Hero.txt_chrname font and its
+            // authored size. A full-panel style copy previously changed the
+            // native name appearance and lacked several outline properties.
             GTextField caption = hero.txt_chrname;
+            float nativeNameY = caption.y;
             caption.text = usage.Name;
             caption.visible = true;
             caption.touchable = false;
             caption.tooltips = usage.Name;
             caption.singleLine = true;
-            caption.autoSize = AutoSizeType.Shrink;
+            caption.autoSize = AutoSizeType.None;
             caption.verticalAlign = VertAlignType.Middle;
-            // HeroPanel's txt_Name is the style authority. Do not manually
-            // recolor its fill, replace the outline, or force an ad-hoc size.
-            if (_heroPanelNameStyle != null)
-                _heroPanelNameStyle.ApplyExact(caption);
-            // V0.2.19 centered across the full hero button correctly. Keep
-            // that horizontal frame; only raise the label inside the card.
+            if (usage.ContractSigned) {
+                // Contracted heroes use black text, even when the native name
+                // template uses a multi-stop fill gradient.
+                TextFormat nameFormat = caption.textFormat;
+                nameFormat.color = Color.black;
+                nameFormat.gradientColor = null;
+                caption.textFormat = nameFormat;
+            }
             float nameHeight = Math.Min(HeroNameHeight, Math.Max(22f, hero.height * .24f));
-            caption.SetSize(Math.Max(1f, hero.width - 8f), nameHeight);
-            caption.SetXY(4f, Math.Max(2f, hero.height - nameHeight - 12f));
+            caption.SetSize(Math.Max(1f, hero.width - 8f), nameHeight, true);
+            // Ignore the authored pivot when centering the whole text box.
+            caption.SetXY((hero.width - caption.width) * .5f,
+                Math.Max(2f, nativeNameY - 8f), true);
             caption.align = AlignType.Center;
 
             hero.com_show.visible = false;
