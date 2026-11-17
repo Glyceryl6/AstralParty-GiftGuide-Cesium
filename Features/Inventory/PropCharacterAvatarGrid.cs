@@ -21,7 +21,6 @@ namespace AstralProbe.Features.Inventory {
         // portrait/name and creates large looking gaps around each cell.
         private const int ColumnGap = 5;
         private const int RowGap = 5;
-        private const float HeroNameHeight = 29f;
         private const int ContractCountFontSize = 21;
         private const float HeadingHeight = 36f;
         private const float SectionGap = 12f;
@@ -444,17 +443,14 @@ namespace AstralProbe.Features.Inventory {
             hero.com_Loader.Ultimate.selectedIndex = usage.IsUltimate ? 1 : 0;
             hero.txt_Trial.visible = false;
             hero.btn_Collect.visible = false;
-            // Keep the actual Hero_Button_Hero.txt_chrname font and its
-            // authored size. A full-panel style copy previously changed the
-            // native name appearance and lacked several outline properties.
+            // HeroPanel.Refresh only sets txt_chrname.text. Keep the native
+            // text field's authored x/y, width, pivot, autoSize and alignment;
+            // resizing/repositioning it here was shifting names to the right.
             GTextField caption = hero.txt_chrname;
             caption.text = usage.Name;
             caption.visible = true;
             caption.touchable = false;
             caption.tooltips = usage.Name;
-            caption.singleLine = true;
-            caption.autoSize = AutoSizeType.Shrink;
-            caption.verticalAlign = VertAlignType.Middle;
             if (usage.ContractSigned) {
                 // Contracted heroes use black text, even when the native name
                 // template uses a multi-stop fill gradient.
@@ -463,15 +459,6 @@ namespace AstralProbe.Features.Inventory {
                 nameFormat.gradientColor = null;
                 caption.textFormat = nameFormat;
             }
-            float nameHeight = Math.Min(HeroNameHeight, Math.Max(22f, hero.height * .24f));
-            // This is the full-card coordinate system that actually centered
-            // the name in v0.2.19. The later pivot-ignoring SetXY moved it right.
-            // Leave it slightly lower, close to the native hero-button layout.
-            caption.SetSize(Math.Max(1f, hero.width - 8f), nameHeight);
-            // The native authored pivot/relation offsets shift its visible glyphs
-            // to the right. Move just this card's caption left and down.
-            caption.SetXY(-9f, Math.Max(2f, hero.height - nameHeight - 1f));
-            caption.align = AlignType.Center;
             // The original selector grays out an unavailable hero button.
             hero.grayed = !usage.Owned;
 
