@@ -17,6 +17,7 @@ namespace AstralProbe.Features.Inventory {
         private const float Edge = 12f;
         private const float Inner = 24f;
         private const float Gap = 5f;
+        private const float DetailGapReach = 156f;
         private const float ExtraHeight = 445f;
         private const float PreferredLift = 76f;
         private const float MaxLift = 260f;
@@ -115,6 +116,18 @@ namespace AstralProbe.Features.Inventory {
             return bottom <= originalFrameBottom + 16f ? Math.Max(current, bottom) : current;
         }
 
+        private static float VisibleTextBottom(GTextField? field, GComponent pane,
+            float current, float originalFrameBottom) {
+            if (field == null || field.isDisposed || !field.visible || field.parent != pane)
+                return current;
+            // A text field can reserve significantly more height than the
+            // rendered description. Ignore only that unused lower text space.
+            float height = field.textHeight > 0f
+                ? Math.Min(field.height, field.textHeight + 10f) : field.height;
+            float bottom = field.y + height;
+            return bottom <= originalFrameBottom + 16f ? Math.Max(current, bottom) : current;
+        }
+
         private bool Apply(IReadOnlyList<GObject> footer, IReadOnlyList<GObject> content,
             GTextField? description, GButton? preview, GTextField? name, bool afterFooter) {
             GRoot root = GRoot.inst;
@@ -167,17 +180,18 @@ namespace AstralProbe.Features.Inventory {
             // place the character list below their existing action buttons.
             float originalBottom = y + h;
             float contentBottom = y + 38f;
-            contentBottom = ContentBottom(description, pane, contentBottom, originalBottom);
+            contentBottom = afterFooter
+                ? ContentBottom(description, pane, contentBottom, originalBottom)
+                : VisibleTextBottom(description, pane, contentBottom, originalBottom);
             contentBottom = ContentBottom(preview, pane, contentBottom, originalBottom);
             contentBottom = ContentBottom(name, pane, contentBottom, originalBottom);
             if (content != null) foreach (GObject obj in content)
                 contentBottom = ContentBottom(obj, pane, contentBottom, originalBottom);
-            float detailSafeBottom = Math.Max(
-                ContentBottom(description, pane, y + 38f, originalBottom),
-                ContentBottom(preview, pane, y + 38f, originalBottom));
             float nativeBottom = contentBottom;
+            float nativeContentBottom = contentBottom;
             if (footer != null) foreach (GObject obj in footer)
-                nativeBottom = ContentBottom(obj, pane, nativeBottom, originalBottom);
+                nativeContentBottom = ContentBottom(obj, pane, nativeContentBottom, originalBottom);
+            nativeBottom = nativeContentBottom;
             // The bottom field is declared as GLabel in both native window
             // classes and is not always upgraded to UICom_PopUpWindow_Bottom.
             // Measure visible frame buttons without requiring that subclass.
@@ -251,11 +265,10 @@ namespace AstralProbe.Features.Inventory {
             // otherwise the viewport begins too low and appears very short.
             _top = Math.Max(contentBottom, nativeBottom) - lift + Gap;
             if (!afterFooter) {
-                // Detail window: use some of the original gap above the button
-                // row instead of leaving a tall unused strip above the guide.
-                // Still stay below the item description and preview image.
-                float safeTop = detailSafeBottom - lift + Gap;
-                _top = Math.Max(safeTop, _top - 64f);
+                // Detail window: reach farther into the unused native gap,
+                // without covering its visible item text, image, or controls.
+                float safeTop = nativeContentBottom - lift + Gap;
+                _top = Math.Max(safeTop, _top - DetailGapReach);
             }
             float maxBottom = y - lift + h + extraHeight - Inner;
             _height = Math.Max(0f, maxBottom - _top);
