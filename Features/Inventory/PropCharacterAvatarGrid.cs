@@ -21,7 +21,7 @@ namespace AstralProbe.Features.Inventory {
         private const int ColumnGap = 5;
         private const int RowGap = 5;
         private const float HeroNameHeight = 29f;
-        private const int ContractCountFontSize = 16;
+        private const int ContractCountFontSize = 19;
         private const float HeadingHeight = 36f;
         private const float SectionGap = 12f;
         private const float ContractColumnGap = 2f;
@@ -517,7 +517,7 @@ namespace AstralProbe.Features.Inventory {
                 number.align = AlignType.Center;
                 // Increase both by a small amount; keep the item number at
                 // one fixed size and near the bottom of the bigger icon.
-                float numberHeight = Math.Min(23f, Math.Max(19f, slotHeight * .28f));
+                float numberHeight = Math.Min(27f, Math.Max(23f, slotHeight * .31f));
                 float scale = Math.Min(1.88f, Math.Min(
                     (slotWidth + 9f) / Math.Max(1f, icon.width),
                     (slotHeight - numberHeight * .12f + 3f) / Math.Max(1f, icon.height)));
