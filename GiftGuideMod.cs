@@ -10,7 +10,7 @@ namespace GiftGuide {
         private PreferredGiftBadgeService? _preferred;
 
         public override string Name => "GiftGuide";
-        public override string Version => "0.2.20";
+        public override string Version => "0.2.21";
         public override string Description => "礼物指南：角色适用材料、偏好礼物标识";
 
         public override void OnLoad() => Log.Info("礼物指南已加载");
