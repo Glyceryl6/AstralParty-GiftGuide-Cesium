@@ -22,7 +22,7 @@ namespace AstralProbe.Features.Inventory {
         private const int ColumnGap = 5;
         private const int RowGap = 5;
         private const float HeroNameHeight = 29f;
-        private const int ContractCountFontSize = 19;
+        private const int ContractCountFontSize = 21;
         private const float HeadingHeight = 36f;
         private const float SectionGap = 12f;
         private const float ContractColumnGap = 2f;
@@ -203,6 +203,7 @@ namespace AstralProbe.Features.Inventory {
                 EnsureNativeExtension(UIButton_GoodsItem_Store.URL, typeof(UIButton_GoodsItem_Store));
                 EnsureNativeExtension(UICom_Item.URL, typeof(UICom_Item));
                 EnsureNativeExtension(UIHero_Com_BreakThrough.URL, typeof(UIHero_Com_BreakThrough));
+                EnsureNativeExtension(UIHero_Com_TalentItem.URL, typeof(UIHero_Com_TalentItem));
                 EnsureNativeExtension(UIHero_com_show.URL, typeof(UIHero_com_show));
                 EnsureNativeExtension(UIHero_Com_HeroItem.URL, typeof(UIHero_Com_HeroItem));
                 EnsureNativeExtension(UIHero_Button_Hero.URL, typeof(UIHero_Button_Hero));
@@ -476,23 +477,25 @@ namespace AstralProbe.Features.Inventory {
             cell.SetSize(cellWidth, cellHeight);
             cell.AddChild(hero);
 
-            bool showCompleted = group == 1 && usage.PotentialAwakened ||
-                group == 2 && usage.FavorDeepened;
+            bool showCompleted = (group == 1 && usage.PotentialAwakened) ||
+                (group == 2 && usage.FavorDeepened);
             if (showCompleted) {
+                // Preserve the native HeroPanel status icon and coordinates.
                 hero.com_show.visible = true;
                 hero.com_show.Status.selectedIndex = group == 2 ? 1 : 3;
                 hero.com_show.releationPowerUp.selectedIndex = group == 2 ? 1 : 0;
                 hero.com_show.LV_txt.text = (group == 2
                     ? usage.FavorLevel : usage.PotentialLevel).ToString();
-            } else if (group == 1 || group == 2) {
-                string status = group == 1
-                    ? (usage.PotentialMissing > 0 ? "缺少 " + usage.PotentialMissing : "材料已齐")
-                    : usage.FavorExp + "/" + usage.FavorNeedExp;
-                AddHeroStatus(hero, status, favorTitle);
+            } else if (group == 2) {
+                AddHeroStatus(hero, usage.FavorExp + "/" + usage.FavorNeedExp,
+                    favorTitle);
             }
             if (group == 0) {
                 if (usage.ContractSigned) AddGiftCompletionArt(hero, caption.y - 4f);
-                else AddHeroContractMaterials(hero, usage);
+                else AddHeroMaterials(hero, usage.ContractRequirements, false, favorTitle);
+            } else if (group == 1 && !usage.PotentialAwakened) {
+                // Always show talent materials, even when all are available.
+                AddHeroMaterials(hero, usage.PotentialRequirements, true, favorTitle);
             }
             return cell;
         }
@@ -573,46 +576,62 @@ namespace AstralProbe.Features.Inventory {
             }
         }
 
-        private static void AddHeroContractMaterials(UIHero_Button_Hero hero,
-            CharacterMaterialUsage usage) {
-            int count = usage.ContractRequirements.Count;
+        private static void AddHeroMaterials(UIHero_Button_Hero hero,
+            IReadOnlyList<ContractRequirement> requirements, bool potential,
+            FavorTitleAppearance? favorTitle) {
+            int count = requirements.Count;
             if (count == 0) return;
 
-            // Place materials in the LOWER part of the native hero button,
-            // directly above its name. Both stay inside the card bounds.
+            // Pull each icon and its count inward together, keeping both rows
+            // directly above the name (the original portrait stays untouched).
             int columns = count <= 3 ? count : count == 4 ? 2 : 3;
             int rows = (count + columns - 1) / columns;
-            float width = Math.Max(1f, hero.width - 8f);
-            // Shift the entire material group (icons AND counts) upward,
-            // leaving a clear strip before the centered character name.
-            float bottom = Math.Max(28f, hero.txt_chrname.y - 10f);
+            float width = Math.Max(1f, hero.width - 24f);
+            float bottom = Math.Max(28f, hero.txt_chrname.y - 7f);
             float availableHeight = Math.Max(1f,
                 bottom - Math.Max(4f, hero.height * .25f));
             float height = Math.Min(availableHeight,
                 rows * 86f + (rows - 1) * ContractRowGap);
             var materials = new GList {
-                name = "GiftGuide.list_BreakThrough", touchable = false, opaque = false,
+                name = potential ? "GiftGuide.list_PotentialMaterials" :
+                    "GiftGuide.list_BreakThrough",
+                touchable = false, opaque = false,
                 layout = ListLayoutType.FlowHorizontal, columnCount = columns,
                 columnGap = (int)ContractColumnGap, lineGap = (int)ContractRowGap,
                 autoResizeItem = false
             };
             materials.SetSize(width, height);
-            materials.SetXY(4f, bottom - height);
+            materials.SetXY((hero.width - width) * .5f, bottom - height);
             hero.AddChild(materials);
 
             float slotWidth = (width - (columns - 1) * ContractColumnGap) / columns;
             float slotHeight = (height - (rows - 1) * ContractRowGap) / rows;
-            foreach (ContractRequirement need in usage.ContractRequirements) {
-                UIHero_Com_BreakThrough item = UIHero_Com_BreakThrough.CreateInstance();
-                if (item == null || !(item.com_Item is UICom_Item icon) || item.txt_Num == null)
-                    throw new InvalidOperationException("原版契约材料组件尚未准备好");
+            foreach (ContractRequirement need in requirements) {
+                // Talent materials use the matching native HeroPanel template.
+                GComponent item;
+                GButton icon;
+                GTextField number;
+                if (potential) {
+                    UIHero_Com_TalentItem talent = UIHero_Com_TalentItem.CreateInstance();
+                    if (talent == null || talent.txt_Num == null || talent.com_Item == null)
+                        throw new InvalidOperationException("原版潜能材料组件尚未准备好");
+                    item = talent;
+                    icon = talent.com_Item;
+                    number = talent.txt_Num;
+                } else {
+                    UIHero_Com_BreakThrough contract = UIHero_Com_BreakThrough.CreateInstance();
+                    if (contract == null || contract.txt_Num == null || contract.com_Item == null)
+                        throw new InvalidOperationException("原版契约材料组件尚未准备好");
+                    item = contract;
+                    icon = contract.com_Item;
+                    number = contract.txt_Num;
+                }
+                if (!(icon is UICom_Item nativeIcon))
+                    throw new InvalidOperationException("原版材料图标结构不匹配");
                 item.touchable = false;
                 item.SetSize(slotWidth, slotHeight);
-                icon.RefreshItem(need.ItemId, showNum: false);
+                nativeIcon.RefreshItem(need.ItemId, showNum: false);
                 icon.touchable = false;
-                // Match HeroPanel's txt_Num template. Only the *owned* count
-                // is red/green; the required count keeps its native color.
-                GTextField number = item.txt_Num;
                 number.SetVar("color", need.Owned >= need.Required ? "00FF00" : "FF0000")
                     .SetVar("curNum", need.Owned.ToString())
                     .SetVar("target", need.Required.ToString()).FlushVars();
@@ -621,15 +640,18 @@ namespace AstralProbe.Features.Inventory {
                 number.singleLine = true;
                 number.autoSize = AutoSizeType.None;
                 number.verticalAlign = VertAlignType.Middle;
-                TextFormat numberFormat = number.textFormat;
-                numberFormat.size = ContractCountFontSize;
-                numberFormat.align = AlignType.Center;
-                number.textFormat = numberFormat;
+                TextFormat format = number.textFormat;
+                format.size = ContractCountFontSize;
+                format.align = AlignType.Center;
+                number.textFormat = format;
                 number.align = AlignType.Center;
-                // Increase both by a small amount; keep the item number at
-                // one fixed size and near the bottom of the bigger icon.
-                float numberHeight = Math.Min(27f, Math.Max(23f, slotHeight * .31f));
-                float scale = Math.Min(1.88f, Math.Min(
+                if (favorTitle != null) favorTitle.ApplyOutline(number);
+                else {
+                    number.stroke = 1f;
+                    number.strokeColor = new Color(.22f, .12f, .27f, 1f);
+                }
+                float numberHeight = Math.Min(29f, Math.Max(24f, slotHeight * .34f));
+                float scale = Math.Min(1.92f, Math.Min(
                     (slotWidth + 9f) / Math.Max(1f, icon.width),
                     (slotHeight - numberHeight * .12f + 3f) / Math.Max(1f, icon.height)));
                 scale = Math.Max(.01f, scale);
@@ -640,7 +662,7 @@ namespace AstralProbe.Features.Inventory {
                 icon.SetXY((slotWidth - icon.width * scale) * .5f, iconY);
                 number.SetSize(slotWidth, numberHeight);
                 number.SetXY(0f, Math.Max(0f, Math.Min(slotHeight - numberHeight,
-                    iconY + iconHeight - numberHeight * .65f - 2f)));
+                    iconY + iconHeight - numberHeight * .72f - 2f)));
                 materials.AddChild(item);
             }
             materials.EnsureBoundsCorrect();
@@ -698,10 +720,9 @@ namespace AstralProbe.Features.Inventory {
             price.textFormat = priceFormat;
             bool showIcon = (group == 1 && usage.PotentialAwakened) ||
                 (group == 2 && usage.FavorDeepened);
-            string status = group == 1
-                ? (usage.PotentialMissing > 0 ? "缺少 " + usage.PotentialMissing : "材料已齐")
-                : group == 2 ? usage.FavorExp + "/" + usage.FavorNeedExp : "";
-            native.com_Price.visible = group != 0 && !showIcon;
+            string status = group == 2
+                ? usage.FavorExp + "/" + usage.FavorNeedExp : "";
+            native.com_Price.visible = group == 2 && !showIcon;
             native.com_Price.isDiscount.selectedIndex = 0;
             if (native.com_Price.group_Discount != null)
                 native.com_Price.group_Discount.visible = false;
@@ -735,14 +756,18 @@ namespace AstralProbe.Features.Inventory {
             if (group == 0) {
                 if (usage.ContractSigned)
                     AddGiftCompletionArt(native, native.com_ItemName.y - 4f);
-                else AddContractMaterials(native, usage, cellWidth, cellHeight);
-            }
+                else AddContractMaterials(native, usage.ContractRequirements,
+                    cellWidth, cellHeight, favorTitle);
+            } else if (group == 1 && !usage.PotentialAwakened)
+                AddContractMaterials(native, usage.PotentialRequirements,
+                    cellWidth, cellHeight, favorTitle);
             return native;
         }
 
         private static void AddContractMaterials(UIButton_GoodsItem_Store native,
-            CharacterMaterialUsage usage, float cellWidth, float cellHeight) {
-            int count = usage.ContractRequirements.Count;
+            IReadOnlyList<ContractRequirement> requirements, float cellWidth, float cellHeight,
+            FavorTitleAppearance? favorTitle) {
+            int count = requirements.Count;
             if (count == 0) return;
 
             // Reuse the HeroPanel's native BreakThrough cells, but put the
@@ -778,7 +803,7 @@ namespace AstralProbe.Features.Inventory {
 
             float slotWidth = (width - (columns - 1) * ContractColumnGap) / columns;
             float slotHeight = (height - (rows - 1) * ContractRowGap) / rows;
-            foreach (ContractRequirement need in usage.ContractRequirements) {
+            foreach (ContractRequirement need in requirements) {
                 UIHero_Com_BreakThrough item = UIHero_Com_BreakThrough.CreateInstance();
                 if (item == null || !(item.com_Item is UICom_Item material))
                     throw new InvalidOperationException("原版契约材料组件尚未准备好");
@@ -790,6 +815,7 @@ namespace AstralProbe.Features.Inventory {
                 item.txt_Num.SetVar("color", need.Owned >= need.Required ? "00FF00" : "FF0000")
                     .SetVar("curNum", need.Owned.ToString())
                     .SetVar("target", need.Required.ToString()).FlushVars();
+                if (favorTitle != null) favorTitle.ApplyOutline(item.txt_Num);
                 var slot = new GComponent { touchable = false, opaque = false };
                 slot.SetSize(slotWidth, slotHeight);
                 float scale = Math.Min(1f, Math.Min(

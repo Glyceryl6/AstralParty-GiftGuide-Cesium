@@ -40,6 +40,8 @@ namespace AstralProbe.Features.Inventory {
         internal bool PotentialMaterial;
         internal bool PotentialAwakened;
         internal int PotentialMissing;
+        // The actual HeroPanel talent material cells, not a 'materials ready' label.
+        internal readonly List<ContractRequirement> PotentialRequirements = new();
     }
 
     /// <summary>
@@ -139,18 +141,32 @@ namespace AstralProbe.Features.Inventory {
 
                 var breaks = info.PveBreak;
                 var breakDict = potentials.BreakDict;
+                PVENurturanceBreakConfigure? current = card?.PveData?.GetCurrentTalentConfigure();
+                PVENurturanceBreakConfigure? matchedTalent = null;
                 if (breaks != null && breakDict != null) {
                     for (int j = 0; j < breaks.Count; j++) {
-                        if (!breakDict.TryGetValue(breaks[j], out PVENurturanceBreakConfigure talent) || talent == null)
-                            continue;
+                        if (!breakDict.TryGetValue(breaks[j], out PVENurturanceBreakConfigure talent) ||
+                            talent == null) continue;
                         int need = Need(talent.NeedMaterials, itemId);
                         if (need <= 0) continue;
                         usage.PotentialMaterial = true;
-                        if (card?.PveData?.IsTalentUnlock(talent.Id) != true) usage.PotentialMissing += need;
+                        if (card?.PveData?.IsTalentUnlock(talent.Id) != true)
+                            usage.PotentialMissing += need;
+                        // Prefer the same active talent used by HeroPanel.
+                        // Older materials can still belong to a prior talent;
+                        // choose the first matching one if there is no active match.
+                        if (matchedTalent == null || (current != null && current.Id == talent.Id))
+                            matchedTalent = talent;
                     }
                 }
-                PVENurturanceBreakConfigure? current = card?.PveData?.GetCurrentTalentConfigure();
-                usage.PotentialAwakened = current != null && card?.PveData?.IsTalentUnlock(current.Id) == true;
+                if (matchedTalent?.NeedMaterials != null)
+                    foreach (KeyValuePair<int, int> material in matchedTalent.NeedMaterials) {
+                        if (material.Key <= 0 || material.Value <= 0) continue;
+                        usage.PotentialRequirements.Add(new ContractRequirement(material.Key,
+                            Math.Max(0, bag.GetItemCount(material.Key)), material.Value));
+                    }
+                usage.PotentialAwakened = current != null &&
+                    card?.PveData?.IsTalentUnlock(current.Id) == true;
                 usage.PotentialMissing = usage.PotentialAwakened ? 0 : Math.Max(0, usage.PotentialMissing - inBag);
 
                 if (usage.GiftPreferred || usage.ContractMaterial || usage.PotentialMaterial) result.Add(usage);
