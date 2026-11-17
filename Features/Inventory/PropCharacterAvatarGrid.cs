@@ -37,6 +37,64 @@ namespace AstralProbe.Features.Inventory {
                 UIObjectFactory.SetPackageItemExtension(url, type);
         }
 
+        // Capture the *small* native slider's title, not a temporary HeroPanel.
+        // TextFormat.CopyFrom omits outline/shadow fields, so keep those too.
+        private sealed class FavorTitleAppearance {
+            internal readonly TextFormat Format = new TextFormat();
+            internal readonly float Stroke;
+            internal readonly Color StrokeColor;
+
+            internal FavorTitleAppearance(GTextField source) {
+                TextFormat original = source.textFormat;
+                Format.CopyFrom(original);
+                Format.outline = original.outline;
+                Format.outlineColor = original.outlineColor;
+                Format.shadowOffset = original.shadowOffset;
+                Format.shadowColor = original.shadowColor;
+                Format.gradientColor = original.gradientColor;
+                Stroke = Math.Max(source.stroke, original.outline);
+                StrokeColor = original.outline > 0f ? original.outlineColor : source.strokeColor;
+            }
+
+            internal void ApplyTo(GTextField field) {
+                TextFormat target = field.textFormat;
+                target.CopyFrom(Format);
+                target.outline = Format.outline;
+                target.outlineColor = Format.outlineColor;
+                target.shadowOffset = Format.shadowOffset;
+                target.shadowColor = Format.shadowColor;
+                target.gradientColor = Format.gradientColor;
+                field.textFormat = target;
+                ApplyOutline(field);
+            }
+
+            internal void ApplyOutline(GTextField field) {
+                // A thin outline is retained even if the native title has no
+                // authored outline; material counts need the same contrast.
+                float stroke = Math.Max(1f, Stroke);
+                field.stroke = stroke;
+                field.strokeColor = Stroke > .05f ? StrokeColor :
+                    new Color(.22f, .12f, .27f, 1f);
+            }
+        }
+
+        private static FavorTitleAppearance? ReadNativeFavorTitle() {
+            GObject? slider = null;
+            try {
+                // Force the base progress-bar class; we only need its authored
+                // GTextField named 'title', not a live HeroPanel or game logic.
+                slider = UIPackage.CreateObjectFromURL(UIHero_bar_FavorValue.URL,
+                    typeof(GProgressBar));
+                GTextField? title = (slider as GComponent)?.GetChild("title") as GTextField;
+                return title == null ? null : new FavorTitleAppearance(title);
+            } catch (Exception ex) {
+                SdkLog.Warn("GiftGuide", "原版友情进度文字样式暂不可用：" + ex.Message);
+                return null;
+            } finally {
+                slider?.Dispose();
+            }
+        }
+
         private GuideViewport? _viewport;
         private GComponent? _pane;
         private PropPopupLayout? _layout;
@@ -223,6 +281,7 @@ namespace AstralProbe.Features.Inventory {
                     (cellWidth + ColumnGap)));
 
                 stage = "生成契约、潜能和偏好礼物分组";
+                FavorTitleAppearance? favorTitle = ReadNativeFavorTitle();
                 var sections = new GComponent {
                     name = "GiftGuide.CharacterSections",
                     touchable = false,
@@ -232,13 +291,13 @@ namespace AstralProbe.Features.Inventory {
                 float y = Padding;
                 y = AddSection(sections, usages, 0, "契约", name, description,
                     inner, columns, cellWidth, cellHeight, nativeFont, useHeroCards,
-                    y, scrollLabels);
+                    favorTitle, y, scrollLabels);
                 y = AddSection(sections, usages, 1, "潜能", name, description,
                     inner, columns, cellWidth, cellHeight, nativeFont, useHeroCards,
-                    y, scrollLabels);
+                    favorTitle, y, scrollLabels);
                 y = AddSection(sections, usages, 2, "偏好礼物", name, description,
                     inner, columns, cellWidth, cellHeight, nativeFont, useHeroCards,
-                    y, scrollLabels);
+                    favorTitle, y, scrollLabels);
                 if (y <= Padding) {
                     sections.Dispose();
                     return false;
@@ -298,7 +357,8 @@ namespace AstralProbe.Features.Inventory {
         private static float AddSection(GComponent content, IReadOnlyList<CharacterMaterialUsage> all,
             int group, string heading, GTextField? nameStyle, GTextField? descriptionStyle,
             float width, int columns, float cellWidth, float cellHeight, string nativeFont,
-            bool useHeroCards, float y, List<GTextField> scrollLabels) {
+            bool useHeroCards, FavorTitleAppearance? favorTitle,
+            float y, List<GTextField> scrollLabels) {
             var members = new List<CharacterMaterialUsage>();
             foreach (CharacterMaterialUsage? usage in all) {
                 if (usage == null) continue;
@@ -343,21 +403,24 @@ namespace AstralProbe.Features.Inventory {
             content.AddChild(list);
             foreach (CharacterMaterialUsage usage in members)
                 list.AddChild(BuildCharacterCard(usage, group, cellWidth, cellHeight,
-                    nativeFont, useHeroCards, scrollLabels));
+                    nativeFont, useHeroCards, favorTitle, scrollLabels));
             list.EnsureBoundsCorrect();
             return y + listHeight;
         }
 
         private static GComponent BuildCharacterCard(CharacterMaterialUsage usage,
             int group, float cellWidth, float cellHeight, string nativeFont,
-            bool useHeroCards, List<GTextField> scrollLabels) {
+            bool useHeroCards, FavorTitleAppearance? favorTitle,
+            List<GTextField> scrollLabels) {
             return useHeroCards
-                ? BuildHeroCharacterCard(usage, group, cellWidth, cellHeight, nativeFont)
-                : BuildLegacyStoreCard(usage, group, cellWidth, cellHeight, nativeFont, scrollLabels);
+                ? BuildHeroCharacterCard(usage, group, cellWidth, cellHeight, nativeFont, favorTitle)
+                : BuildLegacyStoreCard(usage, group, cellWidth, cellHeight,
+                    nativeFont, favorTitle, scrollLabels);
         }
 
         private static GComponent BuildHeroCharacterCard(CharacterMaterialUsage usage,
-            int group, float cellWidth, float cellHeight, string nativeFont) {
+            int group, float cellWidth, float cellHeight, string nativeFont,
+            FavorTitleAppearance? favorTitle) {
             UIHero_Button_Hero hero = UIHero_Button_Hero.CreateInstance();
             if (hero == null || hero.com_Loader?.loader_Character == null ||
                 hero.com_show == null || hero.txt_chrname == null)
@@ -380,13 +443,12 @@ namespace AstralProbe.Features.Inventory {
             // authored size. A full-panel style copy previously changed the
             // native name appearance and lacked several outline properties.
             GTextField caption = hero.txt_chrname;
-            float nativeNameY = caption.y;
             caption.text = usage.Name;
             caption.visible = true;
             caption.touchable = false;
             caption.tooltips = usage.Name;
             caption.singleLine = true;
-            caption.autoSize = AutoSizeType.None;
+            caption.autoSize = AutoSizeType.Shrink;
             caption.verticalAlign = VertAlignType.Middle;
             if (usage.ContractSigned) {
                 // Contracted heroes use black text, even when the native name
@@ -397,10 +459,11 @@ namespace AstralProbe.Features.Inventory {
                 caption.textFormat = nameFormat;
             }
             float nameHeight = Math.Min(HeroNameHeight, Math.Max(22f, hero.height * .24f));
-            caption.SetSize(Math.Max(1f, hero.width - 8f), nameHeight, true);
-            // Ignore the authored pivot when centering the whole text box.
-            caption.SetXY((hero.width - caption.width) * .5f,
-                Math.Max(2f, nativeNameY - 8f), true);
+            // This is the full-card coordinate system that actually centered
+            // the name in v0.2.19. The later pivot-ignoring SetXY moved it right.
+            // Leave it slightly lower, close to the native hero-button layout.
+            caption.SetSize(Math.Max(1f, hero.width - 8f), nameHeight);
+            caption.SetXY(4f, Math.Max(2f, hero.height - nameHeight - 5f));
             caption.align = AlignType.Center;
 
             hero.com_show.visible = false;
@@ -415,8 +478,6 @@ namespace AstralProbe.Features.Inventory {
             bool showCompleted = group == 1 && usage.PotentialAwakened ||
                 group == 2 && usage.FavorDeepened;
             if (showCompleted) {
-                // This is the exact HeroPanel status object at its authored
-                // coordinates, not a new icon floating over the card.
                 hero.com_show.visible = true;
                 hero.com_show.Status.selectedIndex = group == 2 ? 1 : 3;
                 hero.com_show.releationPowerUp.selectedIndex = group == 2 ? 1 : 0;
@@ -426,7 +487,7 @@ namespace AstralProbe.Features.Inventory {
                 string status = group == 1
                     ? (usage.PotentialMissing > 0 ? "缺少 " + usage.PotentialMissing : "材料已齐")
                     : usage.FavorExp + "/" + usage.FavorNeedExp;
-                AddHeroStatus(hero, status, nativeFont, group == 2);
+                AddHeroStatus(hero, status, favorTitle);
             }
             if (group == 0)
                 AddHeroContractMaterials(hero, usage);
@@ -434,42 +495,33 @@ namespace AstralProbe.Features.Inventory {
         }
 
         private static void AddHeroStatus(UIHero_Button_Hero hero, string status,
-            string nativeFont, bool isFavorExperience) {
+            FavorTitleAppearance? favorTitle) {
             UIHero_com_show anchor = hero.com_show;
-            float width = Math.Max(1f, hero.width - 6f);
+            float width = Math.Max(1f, hero.width - 8f);
             var text = new GTextField {
                 name = "GiftGuide.HeroStatus", text = status, touchable = false,
                 autoSize = AutoSizeType.None, singleLine = true,
                 verticalAlign = VertAlignType.Middle
             };
-            // FairyGUI TextFormat.CopyFrom intentionally DOES NOT copy
-            // outlines/shadows. Apply them explicitly, on this newly-created
-            // text field only; never mutate the native card's style instance.
-            TextFormat nativeStyle = hero.txt_chrname.textFormat;
-            TextFormat statusStyle = text.textFormat;
-            statusStyle.CopyFrom(nativeStyle);
-            statusStyle.outline = nativeStyle.outline;
-            statusStyle.outlineColor = nativeStyle.outlineColor;
-            statusStyle.shadowOffset = nativeStyle.shadowOffset;
-            statusStyle.shadowColor = nativeStyle.shadowColor;
-            if (isFavorExperience) {
-                statusStyle.size = 18;
-                statusStyle.gradientColor = null;
-                statusStyle.color = Color.white;
-                statusStyle.outline = Math.Max(1.2f, nativeStyle.outline);
-                if (nativeStyle.outline < .1f)
-                    statusStyle.outlineColor = new Color(.20f, .12f, .28f, 1f);
+            if (favorTitle != null) favorTitle.ApplyTo(text);
+            else {
+                // Resource-version fallback; keep native font and a thin
+                // readable outline rather than estimating a tiny 18px label.
+                TextFormat format = text.textFormat;
+                format.CopyFrom(hero.txt_chrname.textFormat);
+                format.size = Math.Max(20, format.size);
+                text.textFormat = format;
+                text.stroke = 1f;
+                text.strokeColor = new Color(.22f, .12f, .27f, 1f);
             }
-            text.textFormat = statusStyle;
-            // None avoids the native Shrink behavior: 1/10 and 1234/5678
-            // now use exactly the same font size. Keep the whole card width.
-            text.autoSize = AutoSizeType.None;
             text.SetPivot(0f, 0f, false);
             text.align = AlignType.Center;
-            float height = Math.Max(24f, anchor.height);
+            text.autoSize = AutoSizeType.None;
+            float height = Math.Max(26f, anchor.height);
             text.SetSize(width, height);
-            text.SetXY((hero.width - width) * .5f, Math.Max(2f,
-                Math.Min(hero.height - height - 2f, anchor.y + (anchor.height - height) * .5f)), true);
+            text.SetXY(4f, Math.Max(2f,
+                Math.Min(hero.height - height - 2f,
+                    anchor.y + (anchor.height - height) * .5f)));
             hero.AddChild(text);
         }
 
@@ -548,7 +600,7 @@ namespace AstralProbe.Features.Inventory {
 
         private static GComponent BuildLegacyStoreCard(CharacterMaterialUsage usage,
             int group, float cellWidth, float cellHeight, string nativeFont,
-            List<GTextField> scrollLabels) {
+            FavorTitleAppearance? favorTitle, List<GTextField> scrollLabels) {
             // Fallback retains the previous UICom_GoodsQuality_Store renderer.
             // Retain the game's entire original shop card, including portrait
             // frame, size, title and price area.
@@ -610,6 +662,11 @@ namespace AstralProbe.Features.Inventory {
             if (native.com_Price.txt_DiscountPercent != null)
                 native.com_Price.txt_DiscountPercent.visible = false;
             price.text = status;
+            if (group == 2 && favorTitle != null) {
+                favorTitle.ApplyTo(price);
+                price.autoSize = AutoSizeType.None;
+                price.align = AlignType.Center;
+            }
 
             if (showIcon) {
                 UIHero_com_show marker = UIHero_com_show.CreateInstance();
