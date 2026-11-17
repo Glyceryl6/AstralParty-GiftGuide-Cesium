@@ -18,10 +18,10 @@ namespace AstralProbe.Features.Inventory {
         private const float Inner = 24f;
         private const float Gap = 5f;
         private const float DetailGapReach = 156f;
-        // Rough FairyGUI logical-pixel equivalents of one/two centimetres
-        // at the design resolution; the visible-content boundary still wins.
-        private const float DetailExtraNormal = 38f;
-        private const float DetailExtraPreferred = 76f;
+        // Extend the detail viewport by roughly one additional centimetre
+        // compared with v0.2.18; avoid covering visible native controls.
+        private const float DetailExtraNormal = 76f;
+        private const float DetailExtraPreferred = 114f;
         private const float ExtraHeight = 445f;
         private const float PreferredLift = 76f;
         private const float MaxLift = 260f;
