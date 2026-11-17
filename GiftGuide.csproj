@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <AssemblyName>GiftGuide</AssemblyName>
     <RootNamespace>GiftGuide</RootNamespace>
-    <Version>0.2.27</Version>
+    <Version>0.2.28</Version>
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="UnityEngine.CoreModule">
