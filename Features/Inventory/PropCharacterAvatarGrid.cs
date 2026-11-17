@@ -507,17 +507,21 @@ namespace AstralProbe.Features.Inventory {
                 autoSize = AutoSizeType.None, singleLine = true,
                 verticalAlign = VertAlignType.Middle
             };
-            if (favorTitle != null) favorTitle.ApplyTo(text);
-            else {
-                // Native slider unavailable: preserve the original fallback
-                // typography instead of hard-coding a fill color or gradient.
-                TextFormat format = text.textFormat;
-                format.CopyFrom(hero.txt_chrname.textFormat);
-                format.size = Math.Max(20, format.size);
-                text.textFormat = format;
-                text.stroke = 1f;
-                text.strokeColor = new Color(.22f, .12f, .27f, 1f);
-            }
+            // The native favor-title snapshot can be black before HeroPanel
+            // selects its live controller page. Use the verified fallback for
+            // all heroes instead of copying that inactive text color.
+            TextFormat format = text.textFormat;
+            format.CopyFrom(hero.txt_chrname.textFormat);
+            format.size = Math.Max(20, format.size);
+            // A contracted hero deliberately has a black txt_chrname. Never
+            // let that name color or its gradient tint the favor EXP label.
+            format.gradientColor = null;
+            text.textFormat = format;
+            // Apply the text color AFTER CopyFrom / textFormat assignment:
+            // setting it in the GTextField initializer is overwritten there.
+            text.color = Color.white;
+            text.stroke = 2f;
+            text.strokeColor = new Color(.22f, .12f, .27f, 1f);
             text.SetPivot(0f, 0f, false);
             text.align = AlignType.Center;
             text.autoSize = AutoSizeType.None;
