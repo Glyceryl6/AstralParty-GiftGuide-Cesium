@@ -21,8 +21,8 @@ namespace AstralProbe.Features.Inventory {
         private const int ColumnGap = 5;
         private const int RowGap = 5;
         private const float HeroNameHeight = 29f;
-        private const float HeadingHeight = 27f;
-        private const float SectionGap = 10f;
+        private const float HeadingHeight = 36f;
+        private const float SectionGap = 12f;
         private const float ContractColumnGap = 2f;
         private const float ContractRowGap = 2f;
         // Exact pink used by SettingWindow for its active controls.
@@ -318,7 +318,7 @@ namespace AstralProbe.Features.Inventory {
                 align = AlignType.Left
             };
             TextFormat headingFormat = title.textFormat;
-            CopyStyle(headingFormat, nameStyle, descriptionStyle, 16, 21);
+            CopyStyle(headingFormat, nameStyle, descriptionStyle, 22, 26);
             if (!string.IsNullOrEmpty(nativeFont)) headingFormat.font = nativeFont;
             headingFormat.bold = true;
             title.textFormat = headingFormat;
