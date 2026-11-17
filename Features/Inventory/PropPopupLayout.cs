@@ -17,11 +17,11 @@ namespace AstralProbe.Features.Inventory {
         private const float Edge = 12f;
         private const float Inner = 24f;
         private const float Gap = 5f;
-        private const float DetailGapReach = 156f;
-        // Extend the detail viewport by roughly one additional centimetre
-        // compared with v0.2.18; avoid covering visible native controls.
-        private const float DetailExtraNormal = 76f;
-        private const float DetailExtraPreferred = 114f;
+        // Two centimetres at the project's approximate 38 logical px/cm.
+        // Previous versions' detail offsets were canceled by a floor based
+        // on the SAME native footer bottom, leaving the viewport unchanged.
+        private const float DetailTopRaise = 76f;
+        private const float PreferredGiftExtraRaise = 38f;
         private const float ExtraHeight = 445f;
         private const float PreferredLift = 76f;
         private const float MaxLift = 260f;
@@ -195,10 +195,8 @@ namespace AstralProbe.Features.Inventory {
             if (content != null) foreach (GObject obj in content)
                 contentBottom = ContentBottom(obj, pane, contentBottom, originalBottom);
             float nativeBottom = contentBottom;
-            float nativeContentBottom = contentBottom;
             if (footer != null) foreach (GObject obj in footer)
-                nativeContentBottom = ContentBottom(obj, pane, nativeContentBottom, originalBottom);
-            nativeBottom = nativeContentBottom;
+                nativeBottom = ContentBottom(obj, pane, nativeBottom, originalBottom);
             // The bottom field is declared as GLabel in both native window
             // classes and is not always upgraded to UICom_PopUpWindow_Bottom.
             // Measure visible frame buttons without requiring that subclass.
@@ -270,14 +268,23 @@ namespace AstralProbe.Features.Inventory {
             _width = w + extraWidth - 2f * Inner;
             // Native item fields moved by -lift too. Use the shifted bottom,
             // otherwise the viewport begins too low and appears very short.
-            _top = Math.Max(contentBottom, nativeBottom) - lift + Gap;
+            float originalTop = Math.Max(contentBottom, nativeBottom) - lift + Gap;
+            _top = originalTop;
             if (!afterFooter) {
-                // Detail window: reach farther into the unused native gap,
-                // without covering its visible item text, image, or controls.
-                float safeTop = nativeContentBottom - lift + Gap;
-                float additionalReach = hasPreferredGift
-                    ? DetailExtraPreferred : DetailExtraNormal;
-                _top = Math.Max(safeTop, _top - DetailGapReach - additionalReach);
+                // Detail window has no requirement to stay BELOW its footer;
+                // the previous Math.Max(footerBottom, originalTop - reach)
+                // always snapped back to footerBottom, so the rise did nothing.
+                // Protect actual item text, preview and active contents instead.
+                float visibleBottom = y + 38f;
+                visibleBottom = VisibleTextBottom(description, pane, visibleBottom, originalBottom);
+                visibleBottom = ContentBottom(preview, pane, visibleBottom, originalBottom);
+                visibleBottom = ContentBottom(name, pane, visibleBottom, originalBottom);
+                if (content != null) foreach (GObject obj in content)
+                    visibleBottom = ContentBottom(obj, pane, visibleBottom, originalBottom);
+                float protectedTop = visibleBottom - lift + Gap;
+                float wantedTop = originalTop - DetailTopRaise -
+                    (hasPreferredGift ? PreferredGiftExtraRaise : 0f);
+                _top = Math.Max(protectedTop, wantedTop);
             }
             float maxBottom = y - lift + h + extraHeight - Inner;
             _height = Math.Max(0f, maxBottom - _top);
