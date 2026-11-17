@@ -503,7 +503,7 @@ namespace AstralProbe.Features.Inventory {
                 AddHeroStatus(hero, status, nativeFont);
             }
             if (group == 0)
-                AddHeroContractMaterials(hero, usage, nativeFont);
+                AddHeroContractMaterials(hero, usage);
             return cell;
         }
 
@@ -527,77 +527,67 @@ namespace AstralProbe.Features.Inventory {
         }
 
         private static void AddHeroContractMaterials(UIHero_Button_Hero hero,
-            CharacterMaterialUsage usage, string nativeFont) {
+            CharacterMaterialUsage usage) {
             int count = usage.ContractRequirements.Count;
             if (count == 0) return;
 
-            // Contract materials share the original hero status position, but
-            // each item has its own unscaled 16+ px count instead of shrinking
-            // the native count together with the item art.
-            GComponent anchor = hero.com_show;
+            // Place materials in the LOWER part of the native hero button,
+            // directly above its name. Both stay inside the card bounds.
             int columns = count <= 3 ? count : count == 4 ? 2 : 3;
             int rows = (count + columns - 1) / columns;
             float width = Math.Max(1f, hero.width - 8f);
-            // Keep single-row gifts large, but leave the portrait visible.
-            float desiredHeight = rows * 78f + (rows - 1) * 3f;
-            float height = Math.Min(Math.Max(1f, hero.height - 8f), desiredHeight);
-            float top = Math.Max(4f, Math.Min(hero.height - height - 4f,
-                anchor.y + anchor.height * .5f - height * .78f));
+            float bottom = Math.Max(28f, hero.txt_chrname.y - 2f);
+            float availableHeight = Math.Max(1f,
+                bottom - Math.Max(4f, hero.height * .30f));
+            float height = Math.Min(availableHeight,
+                rows * 79f + (rows - 1) * ContractRowGap);
             var materials = new GList {
                 name = "GiftGuide.list_BreakThrough", touchable = false, opaque = false,
                 layout = ListLayoutType.FlowHorizontal, columnCount = columns,
-                columnGap = 3, lineGap = 3, autoResizeItem = false
+                columnGap = (int)ContractColumnGap, lineGap = (int)ContractRowGap,
+                autoResizeItem = false
             };
             materials.SetSize(width, height);
-            materials.SetXY(4f, top);
+            materials.SetXY(4f, bottom - height);
             hero.AddChild(materials);
 
-            float slotWidth = (width - (columns - 1) * 3f) / columns;
-            float slotHeight = (height - (rows - 1) * 3f) / rows;
+            float slotWidth = (width - (columns - 1) * ContractColumnGap) / columns;
+            float slotHeight = (height - (rows - 1) * ContractRowGap) / rows;
             foreach (ContractRequirement need in usage.ContractRequirements) {
                 UIHero_Com_BreakThrough item = UIHero_Com_BreakThrough.CreateInstance();
                 if (item == null || !(item.com_Item is UICom_Item icon) || item.txt_Num == null)
                     throw new InvalidOperationException("原版契约材料组件尚未准备好");
+                item.touchable = false;
+                item.SetSize(slotWidth, slotHeight);
                 icon.RefreshItem(need.ItemId, showNum: false);
                 icon.touchable = false;
-                item.touchable = false;
-                item.txt_Num.SetVar("color", need.Owned >= need.Required ? "00FF00" : "FF0000")
-                    .SetVar("curNum", need.Required.ToString())
-                    .SetVar("target", need.Owned.ToString()).FlushVars();
-                // Keep the native renderer and icon frame; replace only its
-                // downsized number field with legible game-font text.
-                item.txt_Num.visible = false;
-                var slot = new GComponent { touchable = false, opaque = false };
-                slot.SetSize(slotWidth, slotHeight);
-                float labelHeight = Math.Min(25f, Math.Max(18f, slotHeight * .30f));
-                float iconWidth = Math.Max(1f, icon.x + icon.width);
-                float iconHeight = Math.Max(1f, icon.y + icon.height);
-                float scale = Math.Min(1.2f, Math.Min(
-                    (slotWidth - 3f) / iconWidth,
-                    (slotHeight - labelHeight - 3f) / iconHeight));
+                // Match HeroPanel's txt_Num template. Only the *owned* count
+                // is red/green; the required count keeps its native color.
+                GTextField number = item.txt_Num;
+                number.SetVar("color", need.Owned >= need.Required ? "00FF00" : "FF0000")
+                    .SetVar("curNum", need.Owned.ToString())
+                    .SetVar("target", need.Required.ToString()).FlushVars();
+                number.visible = true;
+                number.touchable = false;
+                number.singleLine = true;
+                number.autoSize = AutoSizeType.Shrink;
+                number.align = AlignType.Center;
+                number.verticalAlign = VertAlignType.Middle;
+                // Let the icon use the space previously reserved for a
+                // separate text row; nudge the native number closer to it.
+                float numberHeight = Math.Min(23f, Math.Max(15f, slotHeight * .36f));
+                float scale = Math.Min(1.55f, Math.Min(
+                    (slotWidth - 2f) / Math.Max(1f, icon.width),
+                    (slotHeight - numberHeight * .45f) / Math.Max(1f, icon.height)));
                 scale = Math.Max(.01f, scale);
-                item.SetScale(scale, scale);
-                item.SetXY((slotWidth - iconWidth * scale) * .5f, 0f);
-                slot.AddChild(item);
-                var number = new GTextField {
-                    name = "GiftGuide.MaterialCount", touchable = false,
-                    autoSize = AutoSizeType.None,
-                    align = AlignType.Center, verticalAlign = VertAlignType.Middle,
-                    text = need.Required + "/" + need.Owned
-                };
-                TextFormat countFormat = number.textFormat;
-                CopyStyle(countFormat, item.txt_Num, hero.txt_chrname, 16, 19);
-                countFormat.size = Math.Max(18, countFormat.size);
-                countFormat.bold = true;
-                if (!string.IsNullOrEmpty(nativeFont)) countFormat.font = nativeFont;
-                number.textFormat = countFormat;
-                number.color = need.Owned >= need.Required
-                    ? new Color(.10f, .78f, .24f, 1f)
-                    : new Color(.98f, .23f, .29f, 1f);
-                number.SetSize(slotWidth, labelHeight);
-                number.SetXY(0f, slotHeight - labelHeight);
-                slot.AddChild(number);
-                materials.AddChild(slot);
+                icon.SetScale(scale, scale);
+                float iconHeight = icon.height * scale;
+                float iconY = Math.Max(0f, (slotHeight - iconHeight - numberHeight * .55f) * .5f);
+                icon.SetXY((slotWidth - icon.width * scale) * .5f, iconY);
+                number.SetSize(slotWidth, numberHeight);
+                number.SetXY(0f, Math.Max(0f, Math.Min(slotHeight - numberHeight,
+                    iconY + iconHeight - numberHeight * .35f)));
+                materials.AddChild(item);
             }
             materials.EnsureBoundsCorrect();
         }
@@ -732,11 +722,11 @@ namespace AstralProbe.Features.Inventory {
                 material.RefreshItem(need.ItemId, showNum: false);
                 material.touchable = false;
                 item.touchable = false;
-                // The native text template is {curNum}/{target}. Its original
-                // red/green formatting is retained, with required/owned order.
+                // Preserve the original template: owned / required, with
+                // only the owned count red/green (same as HeroPanel).
                 item.txt_Num.SetVar("color", need.Owned >= need.Required ? "00FF00" : "FF0000")
-                    .SetVar("curNum", need.Required.ToString())
-                    .SetVar("target", need.Owned.ToString()).FlushVars();
+                    .SetVar("curNum", need.Owned.ToString())
+                    .SetVar("target", need.Required.ToString()).FlushVars();
                 var slot = new GComponent { touchable = false, opaque = false };
                 slot.SetSize(slotWidth, slotHeight);
                 float scale = Math.Min(1f, Math.Min(
