@@ -23,9 +23,6 @@ namespace AstralProbe.Features.Inventory {
         private const int RowGap = 5;
         private const float HeroNameHeight = 29f;
         private const int ContractCountFontSize = 21;
-        // v0.2.22's light, outlined label was readable; use a slightly
-        // larger fixed face without inheriting the dark native slider fill.
-        private const int FavorExpFontSize = 20;
         private const float HeadingHeight = 36f;
         private const float SectionGap = 12f;
         private const float ContractColumnGap = 2f;
@@ -67,20 +64,21 @@ namespace AstralProbe.Features.Inventory {
                 target.outlineColor = Format.outlineColor;
                 target.shadowOffset = Format.shadowOffset;
                 target.shadowColor = Format.shadowColor;
-                // The native progress title sometimes has a dark fill. Keep
-                // its font metrics but restore the readable light v0.2.22 fill.
-                target.size = FavorExpFontSize;
-                target.color = new Color(1f, .975f, .99f, 1f);
-                target.gradientColor = null;
+                // Match the actual native slider title, including its fill,
+                // gradient and authored font size (v0.2.23 behavior).
+                // Do not override its color or typography after copying.
+                target.gradientColor = Format.gradientColor;
                 field.textFormat = target;
                 ApplyOutline(field);
             }
 
             internal void ApplyOutline(GTextField field) {
-                // Always use the same dark fine edge for experience and the
-                // two types of material counts. Never touch the source title.
-                field.stroke = 1.25f;
-                field.strokeColor = new Color(.22f, .12f, .27f, 1f);
+                // Keep the outline from the original slider's title; if it
+                // has none, provide the same fine edge as v0.2.23.
+                float stroke = Math.Max(1f, Stroke);
+                field.stroke = stroke;
+                field.strokeColor = Stroke > .05f ? StrokeColor :
+                    new Color(.22f, .12f, .27f, 1f);
             }
         }
 
@@ -524,13 +522,11 @@ namespace AstralProbe.Features.Inventory {
             };
             if (favorTitle != null) favorTitle.ApplyTo(text);
             else {
-                // Resource-version fallback; keep native font and a thin
-                // readable outline rather than estimating a tiny 18px label.
+                // Native slider unavailable: preserve the original fallback
+                // typography instead of hard-coding a fill color or gradient.
                 TextFormat format = text.textFormat;
                 format.CopyFrom(hero.txt_chrname.textFormat);
-                format.size = FavorExpFontSize;
-                format.color = new Color(1f, .975f, .99f, 1f);
-                format.gradientColor = null;
+                format.size = Math.Max(20, format.size);
                 text.textFormat = format;
                 text.stroke = 1f;
                 text.strokeColor = new Color(.22f, .12f, .27f, 1f);
