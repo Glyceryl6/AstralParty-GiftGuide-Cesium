@@ -613,23 +613,28 @@ namespace AstralProbe.Features.Inventory {
                 number.visible = true;
                 number.touchable = false;
                 number.singleLine = true;
-                number.autoSize = AutoSizeType.Shrink;
-                number.align = AlignType.Center;
+                number.autoSize = AutoSizeType.None;
                 number.verticalAlign = VertAlignType.Middle;
-                // Let the icon use the space previously reserved for a
-                // separate text row; nudge the native number closer to it.
-                float numberHeight = Math.Min(23f, Math.Max(15f, slotHeight * .36f));
-                float scale = Math.Min(1.55f, Math.Min(
-                    (slotWidth - 2f) / Math.Max(1f, icon.width),
-                    (slotHeight - numberHeight * .45f) / Math.Max(1f, icon.height)));
+                TextFormat numberFormat = number.textFormat;
+                numberFormat.size = ContractCountFontSize;
+                numberFormat.align = AlignType.Center;
+                number.textFormat = numberFormat;
+                number.align = AlignType.Center;
+                // One fixed size for all owned/required counts. Slightly more
+                // of the available space goes to the icon than in v0.2.19;
+                // the count sits closer to, and partly over, its bottom edge.
+                float numberHeight = Math.Min(19f, Math.Max(16f, slotHeight * .28f));
+                float scale = Math.Min(1.72f, Math.Min(
+                    (slotWidth + 4f) / Math.Max(1f, icon.width),
+                    (slotHeight - numberHeight * .22f + 2f) / Math.Max(1f, icon.height)));
                 scale = Math.Max(.01f, scale);
                 icon.SetScale(scale, scale);
                 float iconHeight = icon.height * scale;
-                float iconY = Math.Max(0f, (slotHeight - iconHeight - numberHeight * .55f) * .5f);
+                float iconY = Math.Max(0f, (slotHeight - iconHeight - numberHeight * .35f) * .5f);
                 icon.SetXY((slotWidth - icon.width * scale) * .5f, iconY);
                 number.SetSize(slotWidth, numberHeight);
                 number.SetXY(0f, Math.Max(0f, Math.Min(slotHeight - numberHeight,
-                    iconY + iconHeight - numberHeight * .35f)));
+                    iconY + iconHeight - numberHeight * .58f)), true);
                 materials.AddChild(item);
             }
             materials.EnsureBoundsCorrect();
