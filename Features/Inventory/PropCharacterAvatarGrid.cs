@@ -21,7 +21,7 @@ namespace AstralProbe.Features.Inventory {
         private const int ColumnGap = 5;
         private const int RowGap = 5;
         private const float HeroNameHeight = 29f;
-        private const int ContractCountFontSize = 14;
+        private const int ContractCountFontSize = 16;
         private const float HeadingHeight = 36f;
         private const float SectionGap = 12f;
         private const float ContractColumnGap = 2f;
@@ -537,11 +537,13 @@ namespace AstralProbe.Features.Inventory {
             int columns = count <= 3 ? count : count == 4 ? 2 : 3;
             int rows = (count + columns - 1) / columns;
             float width = Math.Max(1f, hero.width - 8f);
-            float bottom = Math.Max(28f, hero.txt_chrname.y - 2f);
+            // Shift the entire material group (icons AND counts) upward,
+            // leaving a clear strip before the centered character name.
+            float bottom = Math.Max(28f, hero.txt_chrname.y - 10f);
             float availableHeight = Math.Max(1f,
-                bottom - Math.Max(4f, hero.height * .30f));
+                bottom - Math.Max(4f, hero.height * .25f));
             float height = Math.Min(availableHeight,
-                rows * 79f + (rows - 1) * ContractRowGap);
+                rows * 86f + (rows - 1) * ContractRowGap);
             var materials = new GList {
                 name = "GiftGuide.list_BreakThrough", touchable = false, opaque = false,
                 layout = ListLayoutType.FlowHorizontal, columnCount = columns,
@@ -578,21 +580,21 @@ namespace AstralProbe.Features.Inventory {
                 numberFormat.align = AlignType.Center;
                 number.textFormat = numberFormat;
                 number.align = AlignType.Center;
-                // One fixed size for all owned/required counts. Slightly more
-                // of the available space goes to the icon than in v0.2.19;
-                // the count sits closer to, and partly over, its bottom edge.
-                float numberHeight = Math.Min(19f, Math.Max(16f, slotHeight * .28f));
-                float scale = Math.Min(1.72f, Math.Min(
-                    (slotWidth + 4f) / Math.Max(1f, icon.width),
-                    (slotHeight - numberHeight * .22f + 2f) / Math.Max(1f, icon.height)));
+                // Increase both by a small amount; keep the item number at
+                // one fixed size and near the bottom of the bigger icon.
+                float numberHeight = Math.Min(23f, Math.Max(19f, slotHeight * .28f));
+                float scale = Math.Min(1.88f, Math.Min(
+                    (slotWidth + 9f) / Math.Max(1f, icon.width),
+                    (slotHeight - numberHeight * .12f + 3f) / Math.Max(1f, icon.height)));
                 scale = Math.Max(.01f, scale);
                 icon.SetScale(scale, scale);
                 float iconHeight = icon.height * scale;
-                float iconY = Math.Max(0f, (slotHeight - iconHeight - numberHeight * .35f) * .5f);
+                float iconY = Math.Max(0f,
+                    (slotHeight - iconHeight - numberHeight * .35f) * .5f - 3f);
                 icon.SetXY((slotWidth - icon.width * scale) * .5f, iconY);
                 number.SetSize(slotWidth, numberHeight);
                 number.SetXY(0f, Math.Max(0f, Math.Min(slotHeight - numberHeight,
-                    iconY + iconHeight - numberHeight * .58f)), true);
+                    iconY + iconHeight - numberHeight * .65f - 2f)));
                 materials.AddChild(item);
             }
             materials.EnsureBoundsCorrect();
