@@ -1,7 +1,7 @@
 {
   "id": "GiftGuide",
   "name": "礼物指南",
-  "version": "0.2.16",
+  "version": "0.2.17",
   "author": "Glyceryl6",
   "description": "在物品详情、购买和自选道具窗口中展示关联角色，查看友情经验、潜能状态及契约材料。",
   "permissions": 1,
