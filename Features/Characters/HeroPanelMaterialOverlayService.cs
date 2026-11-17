@@ -53,6 +53,9 @@ namespace AstralProbe.Features.Characters {
             }
             try {
                 UIHeroPanel ui = panel.UIObject;
+                // Capture the actual rendered title effects without creating
+                // a second HeroPanel or touching any original text field.
+                PropCharacterAvatarGrid.CaptureNativeHeroNameOutline(ui);
                 if (!ReferenceEquals(_panel, ui)) {
                     Clear();
                     _panel = ui;

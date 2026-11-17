@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using CesiumLoader.SDK.Logging;
 using FairyGUI;
 using FairyGUI.Utils;
@@ -96,6 +97,114 @@ namespace AstralProbe.Features.Inventory {
             } finally {
                 slider?.Dispose();
             }
+        }
+
+        // HeroPanel's txt_Name/txt_Nick use more than TextFormat.CopyFrom's
+        // basic font fields: the native SDF outline, softness and underlay
+        // settings are part of the look. Read from the *live* original panel,
+        // never instantiate/dispose another HeroPanel or modify a shared font.
+        // Keep value snapshots only, not references to the panel or textfields.
+        private sealed class HeroNameOutlineAppearance {
+            private static readonly string[] ExtraFields = {
+                "faceDilate", "outlineSoftness", "underlaySoftness"
+            };
+            private readonly string _font;
+            private readonly bool _bold;
+            private readonly float _outline;
+            private readonly Color _outlineColor;
+            private readonly Vector2 _formatShadowOffset;
+            private readonly Color _shadowColor;
+            private readonly float _stroke;
+            private readonly Color _strokeColor;
+            private readonly Vector2 _shadowOffset;
+            private readonly object?[] _extra = new object?[ExtraFields.Length];
+
+            internal HeroNameOutlineAppearance(GTextField source) {
+                TextFormat format = source.textFormat;
+                _font = format.font;
+                _bold = format.bold;
+                _outline = format.outline;
+                _outlineColor = format.outlineColor;
+                _formatShadowOffset = format.shadowOffset;
+                _shadowColor = format.shadowColor;
+                _stroke = source.stroke;
+                _strokeColor = source.strokeColor;
+                _shadowOffset = source.shadowOffset;
+                for (int i = 0; i < ExtraFields.Length; i++) {
+                    try {
+                        _extra[i] = typeof(TextFormat).GetField(ExtraFields[i],
+                            BindingFlags.Public | BindingFlags.Instance)?.GetValue(format);
+                    } catch { /* older FairyGUI versions need no optional shader fields */ }
+                }
+            }
+
+            internal void ApplyTo(GTextField target) {
+                TextFormat format = target.textFormat;
+                // Keep the EXP number's size, white fill and centering; only
+                // copy the native title's font and outline-related properties.
+                if (!string.IsNullOrEmpty(_font)) format.font = _font;
+                format.bold = _bold;
+                format.outline = _outline;
+                format.outlineColor = _outlineColor;
+                format.shadowOffset = _formatShadowOffset;
+                format.shadowColor = _shadowColor;
+                for (int i = 0; i < ExtraFields.Length; i++) {
+                    if (_extra[i] == null) continue;
+                    try {
+                        typeof(TextFormat).GetField(ExtraFields[i],
+                            BindingFlags.Public | BindingFlags.Instance)?.SetValue(format, _extra[i]);
+                    } catch { /* ignore unavailable optional shader settings */ }
+                }
+                target.textFormat = format;
+                target.stroke = _stroke;
+                target.strokeColor = _strokeColor;
+                target.shadowOffset = _shadowOffset;
+                // The original HeroPanel title may use a dark fill; the EXP
+                // must stay white, including for already-contracted heroes.
+                target.color = Color.white;
+            }
+        }
+
+        private static HeroNameOutlineAppearance? _nativeNameOutline;
+
+        internal static void CaptureNativeHeroNameOutline(UIHeroPanel panel) {
+            if (panel == null || panel.isDisposed) return;
+            try {
+                GTextField? name = panel.txt_Name != null && !panel.txt_Name.isDisposed
+                    ? panel.txt_Name : null;
+                GTextField? nick = panel.txt_Nick != null && !panel.txt_Nick.isDisposed
+                    ? panel.txt_Nick : null;
+                // Both are native title fields; choose the one with the more
+                // visible outline rather than assuming txt_Name is stronger.
+                if (nick != null && (name == null ||
+                    Math.Max(nick.stroke, nick.textFormat.outline) >
+                    Math.Max(name.stroke, name.textFormat.outline))) name = nick;
+                if (name != null)
+                    _nativeNameOutline = new HeroNameOutlineAppearance(name);
+            } catch (Exception ex) {
+                SdkLog.Warn("GiftGuide", "原版英雄名字描边样式读取失败：" + ex.Message);
+            }
+        }
+
+        private static void ApplyFavorOutline(UIHero_Button_Hero hero, GTextField text) {
+            if (_nativeNameOutline != null) {
+                _nativeNameOutline.ApplyTo(text);
+                return;
+            }
+            // No live HeroPanel has appeared yet (e.g. an item popup opened
+            // directly from inventory). Preserve the verified white fill and
+            // use a fine stroke plus a small underlay for a smoother edge than
+            // a single very thick mesh stroke.
+            TextFormat format = text.textFormat;
+            format.outline = 1f;
+            format.outlineColor = new Color(.22f, .12f, .27f, 1f);
+            format.shadowColor = new Color(.22f, .12f, .27f, .75f);
+            format.shadowOffset = new Vector2(0f, 1f);
+            text.textFormat = format;
+            text.stroke = 1f;
+            text.strokeColor = format.outlineColor;
+            text.shadowOffset = new Vector2(0f, 1f);
+            text.color = Color.white;
         }
 
         private GuideViewport? _viewport;
@@ -524,8 +633,9 @@ namespace AstralProbe.Features.Inventory {
             // Apply the text color AFTER CopyFrom / textFormat assignment:
             // setting it in the GTextField initializer is overwritten there.
             text.color = Color.white;
-            text.stroke = 2f;
+            text.stroke = 1f;
             text.strokeColor = new Color(.22f, .12f, .27f, 1f);
+            ApplyFavorOutline(hero, text);
             text.SetPivot(0f, 0f, false);
             text.align = AlignType.Center;
             text.autoSize = AutoSizeType.None;
