@@ -21,8 +21,8 @@ namespace AstralProbe.Features.Inventory {
         private const int RowGap = 5;
         private const float HeadingHeight = 27f;
         private const float SectionGap = 10f;
-        private const float ContractItemHeight = 42f;
-        private const float ContractFooterGap = 6f;
+        private const float ContractColumnGap = 2f;
+        private const float ContractRowGap = 2f;
 
         private GuideViewport? _viewport;
         private GComponent? _pane;
@@ -246,19 +246,6 @@ namespace AstralProbe.Features.Inventory {
             content.AddChild(title);
             y += HeadingHeight + 3f;
 
-            // The native material cells use an extra strip below the original
-            // card. All rows in one GList have the same height; other sections
-            // keep the authored store-card size unchanged.
-            int materialColumns = Math.Max(1, Math.Min(3, (int)(cellWidth / 49f)));
-            float footerHeight = 0f;
-            if (group == 0) {
-                int maxCount = 0;
-                foreach (CharacterMaterialUsage member in members)
-                    maxCount = Math.Max(maxCount, member.ContractRequirements.Count);
-                footerHeight = ContractFooterGap + ContractItemHeight *
-                    Math.Max(1, (maxCount + materialColumns - 1) / materialColumns);
-            }
-            float itemHeight = cellHeight + footerHeight;
             var list = new GList {
                 name = "GiftGuide.NativeStoreItems." + group,
                 layout = ListLayoutType.FlowHorizontal,
@@ -270,20 +257,20 @@ namespace AstralProbe.Features.Inventory {
                 touchable = false
             };
             int rows = (members.Count + columns - 1) / columns;
-            float listHeight = rows * itemHeight + Math.Max(0, rows - 1) * RowGap;
+            float listHeight = rows * cellHeight + Math.Max(0, rows - 1) * RowGap;
             list.SetSize(width, listHeight);
             list.SetXY(Padding, y);
             content.AddChild(list);
             foreach (CharacterMaterialUsage usage in members)
                 list.AddChild(BuildCharacterCard(usage, group, cellWidth, cellHeight,
-                    footerHeight, materialColumns, nativeFont, scrollLabels));
+                    nativeFont, scrollLabels));
             list.EnsureBoundsCorrect();
             return y + listHeight;
         }
 
         private static GComponent BuildCharacterCard(CharacterMaterialUsage usage,
-            int group, float cellWidth, float cellHeight, float footerHeight, int materialColumns,
-            string nativeFont, List<GTextField> scrollLabels) {
+            int group, float cellWidth, float cellHeight, string nativeFont,
+            List<GTextField> scrollLabels) {
             // Retain the game's entire original shop card, including portrait
             // frame, size, title and price area.
             UIButton_GoodsItem_Store native = UIButton_GoodsItem_Store.CreateInstance();
@@ -361,31 +348,48 @@ namespace AstralProbe.Features.Inventory {
                 native.AddChild(marker);
             }
 
-            if (group != 0) return native;
+            if (group == 0) AddContractMaterials(native, usage, cellWidth, cellHeight);
+            return native;
+        }
 
-            // Miniature counterpart of HeroPanel.com_Gift.list_BreakThrough:
-            // native UIHero_Com_BreakThrough entries with the same icon and
-            // red/green current/required counts, fitted below each store card.
-            var wrapper = new GComponent {
-                name = "GiftGuide.ContractCard",
+        private static void AddContractMaterials(UIButton_GoodsItem_Store native,
+            CharacterMaterialUsage usage, float cellWidth, float cellHeight) {
+            int count = usage.ContractRequirements.Count;
+            if (count == 0) return;
+
+            // Reuse the HeroPanel's native BreakThrough cells, but put the
+            // miniature list in the shop card's original price/status area.
+            // This must not add a second row below the card.
+            GComponent anchor = native.com_Price;
+            int columns = count <= 3 ? count : Math.Min(3, (count + 1) / 2);
+            int rows = (count + columns - 1) / columns;
+            float width = Math.Max(1f, Math.Min(cellWidth - 6f,
+                Math.Max(anchor.width, cellWidth * .78f)));
+            float desiredHeight = rows * 23f + (rows - 1) * ContractRowGap;
+            float height = Math.Max(1f, Math.Min(cellHeight - 4f,
+                Math.Min(Math.Max(anchor.height, desiredHeight),
+                    Math.Max(30f, cellHeight * .30f))));
+            float x = Math.Max(3f, Math.Min(cellWidth - width - 3f,
+                anchor.x + (anchor.width - width) * .5f));
+            float y = Math.Max(2f, Math.Min(cellHeight - height - 2f,
+                anchor.y + (anchor.height - height) * .5f));
+
+            var materials = new GList {
+                name = "GiftGuide.list_BreakThrough",
+                layout = ListLayoutType.FlowHorizontal,
+                columnGap = (int)ContractColumnGap,
+                lineGap = (int)ContractRowGap,
+                columnCount = columns,
+                autoResizeItem = false,
                 touchable = false,
                 opaque = false
             };
-            wrapper.SetSize(cellWidth, cellHeight + footerHeight);
-            wrapper.AddChild(native);
-            var requirements = new GList {
-                name = "GiftGuide.list_BreakThrough",
-                layout = ListLayoutType.FlowHorizontal,
-                columnGap = 2,
-                lineGap = 0,
-                columnCount = materialColumns,
-                autoResizeItem = false,
-                touchable = false
-            };
-            requirements.SetXY(0f, cellHeight + 2f);
-            requirements.SetSize(cellWidth, footerHeight - 2f);
-            wrapper.AddChild(requirements);
-            float slotWidth = (cellWidth - (materialColumns - 1) * 2f) / materialColumns;
+            materials.SetSize(width, height);
+            materials.SetXY(x, y);
+            native.AddChild(materials);
+
+            float slotWidth = (width - (columns - 1) * ContractColumnGap) / columns;
+            float slotHeight = (height - (rows - 1) * ContractRowGap) / rows;
             foreach (ContractRequirement need in usage.ContractRequirements) {
                 UIHero_Com_BreakThrough item = UIHero_Com_BreakThrough.CreateInstance();
                 if (item == null || !(item.com_Item is UICom_Item material))
@@ -393,22 +397,23 @@ namespace AstralProbe.Features.Inventory {
                 material.RefreshItem(need.ItemId, showNum: false);
                 material.touchable = false;
                 item.touchable = false;
-                item.txt_Num.SetVar("color", need.Owned < need.Required ? "FF0000" : "00FF00")
-                    .SetVar("curNum", need.Owned.ToString())
-                    .SetVar("target", need.Required.ToString()).FlushVars();
+                // The native text template is {curNum}/{target}. Its original
+                // red/green formatting is retained, with required/owned order.
+                item.txt_Num.SetVar("color", need.Owned >= need.Required ? "00FF00" : "FF0000")
+                    .SetVar("curNum", need.Required.ToString())
+                    .SetVar("target", need.Owned.ToString()).FlushVars();
                 var slot = new GComponent { touchable = false, opaque = false };
-                slot.SetSize(slotWidth, ContractItemHeight);
+                slot.SetSize(slotWidth, slotHeight);
                 float scale = Math.Min(1f, Math.Min(
-                    (slotWidth - 3f) / Math.Max(1f, item.width),
-                    (ContractItemHeight - 3f) / Math.Max(1f, item.height)));
+                    (slotWidth - 2f) / Math.Max(1f, item.width),
+                    (slotHeight - 2f) / Math.Max(1f, item.height)));
                 item.SetScale(scale, scale);
                 item.SetXY((slotWidth - item.width * scale) * .5f,
-                    (ContractItemHeight - item.height * scale) * .5f);
+                    (slotHeight - item.height * scale) * .5f);
                 slot.AddChild(item);
-                requirements.AddChild(slot);
+                materials.AddChild(slot);
             }
-            requirements.EnsureBoundsCorrect();
-            return wrapper;
+            materials.EnsureBoundsCorrect();
         }
 
         private static void CopyStyle(TextFormat target, GTextField? preferred,
