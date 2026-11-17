@@ -18,6 +18,10 @@ namespace AstralProbe.Features.Inventory {
         private const float Inner = 24f;
         private const float Gap = 5f;
         private const float DetailGapReach = 156f;
+        // Rough FairyGUI logical-pixel equivalents of one/two centimetres
+        // at the design resolution; the visible-content boundary still wins.
+        private const float DetailExtraNormal = 38f;
+        private const float DetailExtraPreferred = 76f;
         private const float ExtraHeight = 445f;
         private const float PreferredLift = 76f;
         private const float MaxLift = 260f;
@@ -73,7 +77,8 @@ namespace AstralProbe.Features.Inventory {
 
         internal static PropPopupLayout? Expand(GComponent pane, GLabel background,
             IReadOnlyList<GObject> footer, IReadOnlyList<GObject> content,
-            GTextField? description, GButton? preview, GTextField? name, bool afterFooter) {
+            GTextField? description, GButton? preview, GTextField? name,
+            bool afterFooter, bool hasPreferredGift) {
             if (pane == null || pane.isDisposed || background == null || background.isDisposed ||
                 background.parent != pane || background.width < 260f || background.height < 170f)
                 return null;
@@ -90,7 +95,8 @@ namespace AstralProbe.Features.Inventory {
             }
             var layout = new PropPopupLayout(baseline);
             try {
-                if (layout.Apply(footer, content, description, preview, name, afterFooter))
+                if (layout.Apply(footer, content, description, preview, name,
+                    afterFooter, hasPreferredGift))
                     return layout;
             } catch (Exception ex) {
                 SdkLog.Warn("GiftGuide", "扩展原版物品弹窗失败：" + ex);
@@ -129,7 +135,8 @@ namespace AstralProbe.Features.Inventory {
         }
 
         private bool Apply(IReadOnlyList<GObject> footer, IReadOnlyList<GObject> content,
-            GTextField? description, GButton? preview, GTextField? name, bool afterFooter) {
+            GTextField? description, GButton? preview, GTextField? name,
+            bool afterFooter, bool hasPreferredGift) {
             GRoot root = GRoot.inst;
             if (root == null || root.width < 640f || root.height < 440f) return false;
             Baseline original = _baseline;
@@ -268,7 +275,9 @@ namespace AstralProbe.Features.Inventory {
                 // Detail window: reach farther into the unused native gap,
                 // without covering its visible item text, image, or controls.
                 float safeTop = nativeContentBottom - lift + Gap;
-                _top = Math.Max(safeTop, _top - DetailGapReach);
+                float additionalReach = hasPreferredGift
+                    ? DetailExtraPreferred : DetailExtraNormal;
+                _top = Math.Max(safeTop, _top - DetailGapReach - additionalReach);
             }
             float maxBottom = y - lift + h + extraHeight - Inner;
             _height = Math.Max(0f, maxBottom - _top);

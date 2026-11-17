@@ -154,8 +154,12 @@ namespace AstralProbe.Features.Inventory {
                     typeof(UIButton_Collect));
 
                 stage = "扩展原版弹窗";
+                bool hasPreferredGift = false;
+                foreach (CharacterMaterialUsage usage in usages) {
+                    if (usage.GiftPreferred) { hasPreferredGift = true; break; }
+                }
                 layout = PropPopupLayout.Expand(pane, background, footer, objects,
-                    description, preview, name, afterFooter);
+                    description, preview, name, afterFooter, hasPreferredGift);
                 if (layout == null || layout.GuideWidth < 270f || layout.GuideHeight < 105f) {
                     _retry = DateTime.UtcNow.AddSeconds(5);
                     SdkLog.Warn("GiftGuide", "原版物品弹窗当前可用区域不足，角色列表稍后重试");
