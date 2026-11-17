@@ -27,6 +27,75 @@ namespace AstralProbe.Features.Inventory {
         private const float ContractRowGap = 2f;
         // Exact pink used by SettingWindow for its active controls.
         private static readonly Color SettingPink = new Color(1f, .1686f, .5686f, 1f);
+        private static NativeTextStyle? _heroPanelNameStyle;
+        private static NativeTextStyle? _favorTitleStyle;
+        private static bool _sampledHeroPanelStyles;
+
+        // Sample the actual HeroPanel text fields. Copying only a font name
+        // misses its stroke, and the hero-button font lacks some name glyphs.
+        private sealed class NativeTextStyle {
+            private readonly TextFormat _format = new TextFormat();
+            private readonly float _stroke;
+            private readonly Color _strokeColor;
+            private readonly Vector2 _shadowOffset;
+            private readonly Color _color;
+
+            internal NativeTextStyle(GTextField source) {
+                _format.CopyFrom(source.textFormat);
+                _stroke = source.stroke;
+                _strokeColor = source.strokeColor;
+                _shadowOffset = source.shadowOffset;
+                _color = source.color;
+            }
+
+            internal void Apply(GTextField target, int minSize, int maxSize) {
+                TextFormat format = target.textFormat;
+                format.CopyFrom(_format);
+                format.size = Math.Max(minSize, Math.Min(maxSize, format.size));
+                target.textFormat = format;
+                target.stroke = _stroke;
+                target.strokeColor = _strokeColor;
+                target.shadowOffset = _shadowOffset;
+                target.color = _color;
+            }
+        }
+
+        private static void EnsureHeroPanelTextStyles() {
+            if (_sampledHeroPanelStyles) return;
+            _sampledHeroPanelStyles = true;
+            UIHeroPanel? sample = null;
+            try {
+                // Create once and dispose immediately; retain only style values.
+                sample = UIHeroPanel.CreateInstance();
+                if (sample?.txt_Name != null)
+                    _heroPanelNameStyle = new NativeTextStyle(sample.txt_Name);
+                // FairyGUI progress bars use a child named "title" to render
+                // their label (the `title` value itself is a string).
+                if (sample?.slider_Favor?.GetChild("title") is GTextField title)
+                    _favorTitleStyle = new NativeTextStyle(title);
+            } catch (Exception ex) {
+                SdkLog.Warn("GiftGuide", "读取原版英雄面板文字样式失败，保留现有样式：" + ex.Message);
+            } finally {
+                if (sample != null && !sample.isDisposed) {
+                    try { sample.Dispose(); }
+                    catch (Exception ex) {
+                        SdkLog.Warn("GiftGuide", "释放英雄面板样本失败：" + ex.Message);
+                    }
+                }
+            }
+            if (_favorTitleStyle == null) {
+                UIHero_bar_FavorValue? bar = null;
+                try {
+                    bar = UIHero_bar_FavorValue.CreateInstance();
+                    if (bar?.GetChild("title") is GTextField title)
+                        _favorTitleStyle = new NativeTextStyle(title);
+                } catch (Exception ex) {
+                    SdkLog.Warn("GiftGuide", "读取原版友情进度文字样式失败：" + ex.Message);
+                } finally {
+                    if (bar != null && !bar.isDisposed) bar.Dispose();
+                }
+            }
+        }
 
         private GuideViewport? _viewport;
         private GComponent? _pane;
@@ -206,7 +275,8 @@ namespace AstralProbe.Features.Inventory {
                         sampleHero.com_show != null && sampleHero.txt_chrname != null) {
                         useHeroCards = true;
                         cellWidth = sampleHero.width;
-                        cellHeight = sampleHero.height + HeroNameHeight;
+                        // The native name now stays INSIDE the hero button.
+                        cellHeight = sampleHero.height;
                         nativeFont = sampleHero.txt_chrname.textFormat.font ?? "";
                     }
                 } catch (Exception ex) {
@@ -227,6 +297,7 @@ namespace AstralProbe.Features.Inventory {
                     nativeFont = sampleShop.com_ItemName?.txt_Name?.textFormat.font ?? "";
                     sampleShop.Dispose();
                 }
+                if (useHeroCards) EnsureHeroPanelTextStyles();
                 scroll.scrollStep = Math.Max(28f, cellHeight * .38f);
 
                 float available = Math.Max(1f, Math.Min(created.width,
@@ -357,13 +428,12 @@ namespace AstralProbe.Features.Inventory {
             int group, float cellWidth, float cellHeight, string nativeFont,
             bool useHeroCards, List<GTextField> scrollLabels) {
             return useHeroCards
-                ? BuildHeroCharacterCard(usage, group, cellWidth, cellHeight, nativeFont, scrollLabels)
+                ? BuildHeroCharacterCard(usage, group, cellWidth, cellHeight, nativeFont)
                 : BuildLegacyStoreCard(usage, group, cellWidth, cellHeight, nativeFont, scrollLabels);
         }
 
         private static GComponent BuildHeroCharacterCard(CharacterMaterialUsage usage,
-            int group, float cellWidth, float cellHeight, string nativeFont,
-            List<GTextField> scrollLabels) {
+            int group, float cellWidth, float cellHeight, string nativeFont) {
             UIHero_Button_Hero hero = UIHero_Button_Hero.CreateInstance();
             if (hero == null || hero.com_Loader?.loader_Character == null ||
                 hero.com_show == null || hero.txt_chrname == null)
@@ -383,10 +453,30 @@ namespace AstralProbe.Features.Inventory {
             hero.com_Loader.Ultimate.selectedIndex = usage.IsUltimate ? 1 : 0;
             hero.txt_Trial.visible = false;
             hero.btn_Collect.visible = false;
-            // Put the name beneath the hero button rather than at the old
-            // store-card title position. The game-authored portrait is unscaled.
-            hero.txt_chrname.text = usage.Name;
-            hero.txt_chrname.visible = false;
+            // The authored name field belongs to the actual hero button.
+            // Reuse it instead of creating a caption beyond the card's edge.
+            GTextField caption = hero.txt_chrname;
+            caption.text = usage.Name;
+            caption.visible = true;
+            caption.touchable = false;
+            caption.tooltips = usage.Name;
+            caption.singleLine = true;
+            caption.autoSize = AutoSizeType.Shrink;
+            caption.align = AlignType.Center;
+            caption.verticalAlign = VertAlignType.Middle;
+            if (_heroPanelNameStyle != null)
+                _heroPanelNameStyle.Apply(caption, 16, 20);
+            else {
+                TextFormat nameFormat = caption.textFormat;
+                CopyStyle(nameFormat, caption, null, 16, 20);
+                if (!string.IsNullOrEmpty(UIConfig.defaultFont))
+                    nameFormat.font = UIConfig.defaultFont;
+                caption.textFormat = nameFormat;
+            }
+            float nameHeight = Math.Min(HeroNameHeight, Math.Max(22f, hero.height * .24f));
+            caption.SetSize(Math.Max(1f, hero.width - 8f), nameHeight);
+            caption.SetXY(4f, Math.Max(2f, hero.height - nameHeight - 4f));
+
             hero.com_show.visible = false;
             hero.com_show.releationPowerUp.selectedIndex = 0;
             hero.com_show.Status.selectedIndex = 0;
@@ -395,21 +485,6 @@ namespace AstralProbe.Features.Inventory {
                 opaque = false, tooltips = usage.Name };
             cell.SetSize(cellWidth, cellHeight);
             cell.AddChild(hero);
-
-            var caption = new GTextField {
-                name = "GiftGuide.HeroName", text = usage.Name,
-                touchable = false, autoSize = AutoSizeType.None,
-                align = AlignType.Center, verticalAlign = VertAlignType.Middle,
-                tooltips = usage.Name
-            };
-            TextFormat nameFormat = caption.textFormat;
-            CopyStyle(nameFormat, hero.txt_chrname, null, 16, 20);
-            if (!string.IsNullOrEmpty(nativeFont)) nameFormat.font = nativeFont;
-            caption.textFormat = nameFormat;
-            caption.SetSize(cellWidth, HeroNameHeight - 2f);
-            caption.SetXY(0f, hero.height + 1f);
-            cell.AddChild(caption);
-            scrollLabels.Add(caption);
 
             bool showCompleted = group == 1 && usage.PotentialAwakened ||
                 group == 2 && usage.FavorDeepened;
