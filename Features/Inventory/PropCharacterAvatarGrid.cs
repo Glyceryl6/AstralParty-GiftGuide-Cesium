@@ -500,7 +500,7 @@ namespace AstralProbe.Features.Inventory {
                 string status = group == 1
                     ? (usage.PotentialMissing > 0 ? "缺少 " + usage.PotentialMissing : "材料已齐")
                     : usage.FavorExp + "/" + usage.FavorNeedExp;
-                AddHeroStatus(hero, status, nativeFont);
+                AddHeroStatus(hero, status, nativeFont, group == 2);
             }
             if (group == 0)
                 AddHeroContractMaterials(hero, usage);
@@ -508,21 +508,28 @@ namespace AstralProbe.Features.Inventory {
         }
 
         private static void AddHeroStatus(UIHero_Button_Hero hero, string status,
-            string nativeFont) {
+            string nativeFont, bool isFavorExperience) {
             UIHero_com_show anchor = hero.com_show;
-            float width = Math.Min(hero.width - 6f, Math.Max(84f, anchor.width + 30f));
+            float width = Math.Min(hero.width - 8f, Math.Max(84f, anchor.width + 30f));
             var text = new GTextField {
                 name = "GiftGuide.HeroStatus", text = status, touchable = false,
-                autoSize = AutoSizeType.None, align = AlignType.Center,
-                verticalAlign = VertAlignType.Middle
+                autoSize = AutoSizeType.Shrink, singleLine = true,
+                align = AlignType.Center, verticalAlign = VertAlignType.Middle
             };
-            TextFormat format = text.textFormat;
-            CopyStyle(format, hero.txt_chrname, anchor.LV_txt, 17, 20);
-            if (!string.IsNullOrEmpty(nativeFont)) format.font = nativeFont;
-            text.textFormat = format;
-            text.SetSize(width, Math.Max(24f, anchor.height));
-            text.SetXY(Math.Max(3f, Math.Min(hero.width - width - 3f,
-                anchor.x + (anchor.width - width) * .5f)), anchor.y);
+            if (isFavorExperience && _favorTitleStyle != null) {
+                // HeroPanel's UIHero_bar_FavorValue/title has its own outline.
+                _favorTitleStyle.Apply(text, 17, 21);
+            } else {
+                TextFormat format = text.textFormat;
+                CopyStyle(format, hero.txt_chrname, anchor.LV_txt, 17, 20);
+                if (!string.IsNullOrEmpty(nativeFont)) format.font = nativeFont;
+                text.textFormat = format;
+            }
+            float height = Math.Max(24f, anchor.height);
+            text.SetSize(width, height);
+            // Center on the card, not the status icon's offset coordinates.
+            text.SetXY((hero.width - width) * .5f, Math.Max(2f,
+                Math.Min(hero.height - height - 2f, anchor.y + (anchor.height - height) * .5f)));
             hero.AddChild(text);
         }
 
