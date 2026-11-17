@@ -534,6 +534,36 @@ namespace AstralProbe.Features.Inventory {
             return text;
         }
 
+        // FairyGUI coordinates are relative to the immediate parent. The skin
+        // quality marker lives inside com_Loader, not directly under the hero.
+        // Use a coordinate conversion for cards already on stage; the small
+        // fallback also handles newly constructed off-stage popup cards.
+        internal static void PlaceFavorAboveSkinQuality(UIHero_Button_Hero hero,
+            GTextField experience) {
+            GComponent? quality = hero.com_Loader?.com_Qulity;
+            if (quality == null || quality.isDisposed) return;
+            float qualityTop = hero.com_Loader.y + quality.y * hero.com_Loader.scaleY;
+            if (hero.onStage && quality.onStage) {
+                Vector2 point = hero.GlobalToLocal(quality.LocalToGlobal(Vector2.zero));
+                qualityTop = point.y;
+            }
+            PlaceFavorAbove(hero, experience, qualityTop);
+        }
+
+        internal static void PlaceFavorAboveMaterials(UIHero_Button_Hero hero,
+            GTextField experience, GList materials) {
+            PlaceFavorAbove(hero, experience, materials.y);
+        }
+
+        private static void PlaceFavorAbove(UIHero_Button_Hero hero,
+            GTextField experience, float targetTop) {
+            const float gap = 4f;
+            float maxY = Math.Max(2f, hero.height - experience.height - 2f);
+            float y = Math.Max(2f, Math.Min(maxY,
+                targetTop - experience.height - gap));
+            experience.SetXY(experience.x, y);
+        }
+
         /// <summary>
         /// Show the original Hero_Com_Gift completion artwork: image_CN and
         /// image_EN are separate GImages, selected just as HeroPanel does.

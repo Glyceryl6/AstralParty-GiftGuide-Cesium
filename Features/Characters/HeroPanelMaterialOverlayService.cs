@@ -85,30 +85,30 @@ namespace AstralProbe.Features.Characters {
                     try {
                         if (usage.Owned) {
                             if (sort == 1) {
-                                float reserveTop = 0f;
+                                GTextField? exp = null;
                                 if (!usage.FavorDeepened) {
-                                    GTextField exp = PropCharacterAvatarGrid.AddHeroStatus(card,
+                                    exp = PropCharacterAvatarGrid.AddHeroStatus(card,
                                         usage.FavorExp + "/" + usage.FavorNeedExp, _favorStyle);
                                     entry.Children.Add(exp);
-                                    if (!usage.ContractSigned && usage.ContractRequirements.Count > 0) {
-                                        // The native status icon is differently positioned
-                                        // across skins. Reserve room for materials first so
-                                        // the extra EXP row cannot flatten their cells.
-                                        float materialBottom = Math.Max(28f,
-                                            card.txt_chrname.y - 18f);
-                                        float materialRoom = Math.Min(80f,
-                                            Math.Max(38f, card.height * .38f));
-                                        float latestExpBottom = materialBottom - materialRoom - 4f;
-                                        if (exp.y + exp.height > latestExpBottom)
-                                            exp.SetXY(exp.x, Math.Max(2f,
-                                                latestExpBottom - exp.height));
-                                    }
-                                    reserveTop = exp.y + exp.height + 4f;
                                 }
+                                GList? materials = null;
                                 if (!usage.ContractSigned) {
-                                    GList? materials = PropCharacterAvatarGrid.AddHeroMaterials(
-                                        card, usage.ContractRequirements, false, _favorStyle, reserveTop);
+                                    // Reserve enough room for EXP before placing the
+                                    // contract icons; only the native material list
+                                    // itself should determine their final position.
+                                    float reserveTop = exp == null ? 0f : exp.height + 8f;
+                                    materials = PropCharacterAvatarGrid.AddHeroMaterials(
+                                        card, usage.ContractRequirements, false, _favorStyle,
+                                        reserveTop);
                                     if (materials != null) entry.Children.Add(materials);
+                                }
+                                if (exp != null) {
+                                    if (materials != null)
+                                        PropCharacterAvatarGrid.PlaceFavorAboveMaterials(
+                                            card, exp, materials);
+                                    else
+                                        PropCharacterAvatarGrid.PlaceFavorAboveSkinQuality(
+                                            card, exp);
                                 }
                             } else if (!usage.PotentialAwakened) {
                                 GList? materials = PropCharacterAvatarGrid.AddHeroMaterials(
