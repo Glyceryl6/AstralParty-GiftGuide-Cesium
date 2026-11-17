@@ -43,7 +43,7 @@ namespace AstralProbe.Features.Inventory {
 
         // Capture the *small* native slider's title, not a temporary HeroPanel.
         // TextFormat.CopyFrom omits outline/shadow fields, so keep those too.
-        private sealed class FavorTitleAppearance {
+        internal sealed class FavorTitleAppearance {
             internal readonly TextFormat Format = new TextFormat();
             internal readonly float Stroke;
             internal readonly Color StrokeColor;
@@ -591,9 +591,9 @@ namespace AstralProbe.Features.Inventory {
             }
         }
 
-        private static void AddHeroMaterials(UIHero_Button_Hero hero,
+        internal static void AddHeroMaterials(UIHero_Button_Hero hero,
             IReadOnlyList<ContractRequirement> requirements, bool potential,
-            FavorTitleAppearance? favorTitle) {
+            FavorTitleAppearance? favorTitle, float reserveTop = 0f) {
             int count = requirements.Count;
             if (count == 0) return;
 
@@ -602,9 +602,11 @@ namespace AstralProbe.Features.Inventory {
             int columns = count <= 3 ? count : count == 4 ? 2 : 3;
             int rows = (count + columns - 1) / columns;
             float width = Math.Max(1f, hero.width - 24f);
-            float bottom = Math.Max(28f, hero.txt_chrname.y - 7f);
-            float availableHeight = Math.Max(1f,
-                bottom - Math.Max(4f, hero.height * .25f));
+            // Keep both icons and text safely above the skin-quality frame.
+            // Sorted HeroPanel cards may reserve a small row for favor EXP.
+            float bottom = Math.Max(28f, hero.txt_chrname.y - 18f);
+            float top = Math.Max(4f, Math.Max(hero.height * .25f, reserveTop));
+            float availableHeight = Math.Max(1f, bottom - top);
             float height = Math.Min(availableHeight,
                 rows * 86f + (rows - 1) * ContractRowGap);
             var materials = new GList {
